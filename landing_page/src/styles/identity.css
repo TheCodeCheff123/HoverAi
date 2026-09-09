@@ -1,0 +1,271 @@
+/* ── My Identity page ───────────────────────────────────────────────── */
+.identity-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.identity-title { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
+.identity-subtitle { color: var(--muted); margin-top: 4px; font-size: 13.5px; }
+
+.btn-download {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+.btn-download:hover { background: var(--bg); }
+
+/* ── Profile hero card ──────────────────────────────────────────────── */
+.identity-hero {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 32px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.identity-avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.identity-avatar {
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3.5px solid var(--foid-pink);
+}
+
+.identity-avatar-placeholder {
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  background: var(--foid-purple);
+  border: 3.5px solid var(--foid-pink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.identity-name { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: var(--foid-purple-lt);
+  color: var(--foid-purple);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* push trust ring to the far right */
+.identity-trust {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.trust-ring {
+  position: relative;
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+}
+
+.trust-ring svg {
+  transform: rotate(-90deg);
+}
+
+.trust-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.trust-ring-pct {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.trust-ring-word {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.trust-score-info {}
+.trust-score-caption {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.trust-score-value {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.trust-score-rank {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Bottom two-column row ──────────────────────────────────────────── */
+.identity-bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+}
+
+/* ── Verification progress card ─────────────────────────────────────── */
+.verif-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px 28px;
+}
+
+.verif-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.verif-sub   { font-size: 12.5px; color: var(--muted); margin-bottom: 32px; }
+
+.verif-steps {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  padding: 0 16px;
+}
+
+.verif-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  position: relative;
+}
+
+/* connector line between steps */
+.verif-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 22px;
+  left: calc(50% + 22px);
+  right: calc(-50% + 22px);
+  height: 3px;
+  background: var(--foid-purple);
+  z-index: 0;
+}
+
+/* grey connector for incomplete */
+.verif-step.incomplete:not(:last-child)::after,
+.verif-step:not(:last-child).after-incomplete::after {
+  background: var(--border);
+}
+
+.verif-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--foid-purple);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #fff;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.verif-icon.incomplete {
+  background: var(--border);
+  color: var(--muted);
+}
+
+.verif-step-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: center;
+}
+
+/* ── Linked accounts card ───────────────────────────────────────────── */
+.linked-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px 24px;
+}
+
+.linked-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+
+.linked-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.linked-item:last-child { border-bottom: none; }
+
+.linked-bank-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--foid-purple-lt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--foid-purple);
+  flex-shrink: 0;
+}
+
+.linked-bank-info { flex: 1; }
+.linked-bank-name { font-size: 14px; font-weight: 600; }
+.linked-bank-date { font-size: 12px; color: var(--muted); }
+
+.linked-badge {
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: var(--foid-purple-lt);
+  color: var(--foid-purple);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 1000px) {
+  .identity-bottom-row { grid-template-columns: 1fr; }
+  .identity-trust { margin-left: 0; }
+  .identity-hero { flex-wrap: wrap; }
+}
