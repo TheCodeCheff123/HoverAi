@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import HoverAiLogo from './Logo'
+import RemixIcon from './RemixIcon'
 
 const NAV_LINKS = [
   { label: 'Features',     href: '#features' },
@@ -17,26 +19,31 @@ const REST_TOP = Math.round((SPACER_H - 52) / 2)
 export default function Header() {
   const [open, setOpen]       = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 1024)
 
   useEffect(() => {
-    // "scrolled" = user has moved away from the very top
     const onScroll = () => setScrolled(window.scrollY > 10)
+    const onResize = () => setIsMobile(window.innerWidth < 1024)
     window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    window.addEventListener('resize', onResize, { passive: true })
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onResize)
+    }
   }, [])
 
   return (
     <header
       className="fixed left-0 right-0 z-50 flex items-center justify-center transition-[top,padding] duration-300 ease-out"
       style={{
-        top:          scrolled ? DOCKED_TOP : REST_TOP,
-        paddingLeft:  scrolled ? 16 : 0,
-        paddingRight: scrolled ? 16 : 0,
+        top:          isMobile ? 0 : (scrolled ? DOCKED_TOP : REST_TOP),
+        paddingLeft:  (!isMobile && scrolled) ? 16 : 0,
+        paddingRight: (!isMobile && scrolled) ? 16 : 0,
       }}
     >
       {/* Pill wrapper */}
       <div
-        className='flex items-center justify-between w-full md:max-w-[90%] p-5 sm:px-6 md:border md:border-[var(--color-brand-400)] transition-[border-radius] duration-300 md:rounded-full'
+        className='flex items-center justify-between w-full lg:max-w-[90%] p-4 sm:p-5 md:px-6 lg:border lg:border-[var(--color-brand-400)] transition-[border-radius] duration-300 lg:rounded-full'
         style={{
           background: 'rgba(10,10,10,0.75)',
           backdropFilter: 'blur(14px) saturate(180%)',
@@ -47,7 +54,7 @@ export default function Header() {
         <HoverAiLogo />
 
         {/* Desktop nav links */}
-        <nav className="hidden md:flex items-center gap-10">
+        <nav className="hidden lg:flex items-center gap-10">
           {NAV_LINKS.map(l => (
             <a
               key={l.label}
@@ -63,49 +70,113 @@ export default function Header() {
         <div className="flex items-center gap-6">
           <a
             href="#pricing"
-            className="hidden md:block text-[15px] text-white/80 hover:text-white transition-colors"
+            className="hidden lg:block text-[15px] text-white/80 hover:text-white transition-colors"
           >
             Sign In
           </a>
           <Link
             to="/signup"
-            className="text-[14px] sm:text-[15px] font-semibold px-5 sm:px-6 py-2.5 rounded-full text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+            className="text-[11px] sm:text-[15px] font-semibold px-3 sm:px-6 py-1.5 sm:py-2.5 rounded-full text-white transition-opacity hover:opacity-90 whitespace-nowrap"
             style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
           >
-            Get Started Free
+            <span className="sm:hidden">Get Started</span>
+            <span className="hidden sm:inline">Get Started Free</span>
           </Link>
 
-          {/* Mobile hamburger */}
+          {/* Mobile hamburger / close */}
           <button
-            className="md:hidden flex flex-col gap-[5px] ml-2"
+            className="lg:hidden flex flex-col gap-[5px] ml-2 relative w-5 h-5 items-center justify-center"
             onClick={() => setOpen(o => !o)}
-            aria-label="Toggle menu"
+            aria-label={open ? 'Close menu' : 'Open menu'}
           >
-            <span className="w-5 h-0.5 bg-white rounded" />
-            <span className="w-5 h-0.5 bg-white rounded" />
-            <span className="w-3 h-0.5 bg-white rounded" />
+            <motion.span
+              className="absolute w-5 h-0.5 bg-white rounded origin-center"
+              animate={{ rotate: open ? 45 : 0, y: open ? 0 : -4 }}
+              transition={{ duration: 0.22 }}
+            />
+            <motion.span
+              className="absolute w-5 h-0.5 bg-white rounded"
+              animate={{ opacity: open ? 0 : 1, scaleX: open ? 0 : 1 }}
+              transition={{ duration: 0.18 }}
+            />
+            <motion.span
+              className="absolute w-5 h-0.5 bg-white rounded origin-center"
+              animate={{ rotate: open ? -45 : 0, y: open ? 0 : 4 }}
+              transition={{ duration: 0.22 }}
+            />
           </button>
         </div>
       </div>
 
-      {/* Mobile dropdown */}
-      {open && (
-        <div
-          className="absolute top-full left-0 right-0 mt-2 mx-4 rounded-2xl p-5 flex flex-col gap-3 md:hidden"
-          style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)' }}
-        >
-          {NAV_LINKS.map(l => (
-            <a
-              key={l.label}
-              href={l.href}
-              className="text-[16px] text-white/80 hover:text-white py-1"
-              onClick={() => setOpen(false)}
+      {/* Mobile fullscreen overlay */}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="fixed inset-0 z-40 flex flex-col md:hidden"
+            style={{ background: 'rgba(8,8,20,0.97)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}
+            initial={{ opacity: 0, y: -24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -16 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {/* Top bar mirrors the header */}
+            <div className="flex items-center justify-between px-5 py-4">
+              <HoverAiLogo />
+              <button
+                onClick={() => setOpen(false)}
+                className="flex items-center justify-center w-9 h-9 rounded-full"
+                style={{ background: 'rgba(255,255,255,0.08)' }}
+                aria-label="Close menu"
+              >
+                <RemixIcon name="ri-close-line" size={20} color="#fff" />
+              </button>
+            </div>
+
+            {/* Nav links */}
+            <nav className="flex flex-col px-6 pt-8 gap-1 flex-1">
+              {NAV_LINKS.map((l, i) => (
+                <motion.a
+                  key={l.label}
+                  href={l.href}
+                  className="text-[22px] font-semibold text-white/80 hover:text-white py-3 border-b border-white/[0.07] transition-colors"
+                  onClick={() => setOpen(false)}
+                  initial={{ opacity: 0, x: -16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.08 + i * 0.05, duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  {l.label}
+                </motion.a>
+              ))}
+            </nav>
+
+            {/* Bottom CTA */}
+            <motion.div
+              className="px-6 pb-12 pt-6 flex flex-col gap-3"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
             >
-              {l.label}
-            </a>
-          ))}
-        </div>
-      )}
+              <Link
+                to="/signup"
+                className="w-full flex items-center justify-center gap-2 py-4 rounded-full text-[16px] font-semibold text-white"
+                style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
+                onClick={() => setOpen(false)}
+              >
+                Get Started Free
+                <RemixIcon name="ri-arrow-right-line" size={18} color="#fff" />
+              </Link>
+              <a
+                href="#pricing"
+                className="w-full flex items-center justify-center py-4 rounded-full text-[15px] font-semibold text-white/70"
+                style={{ border: '1px solid rgba(255,255,255,0.15)' }}
+                onClick={() => setOpen(false)}
+              >
+                Sign In
+              </a>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </header>
   )
 }

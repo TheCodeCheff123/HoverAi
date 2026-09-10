@@ -406,3 +406,13 @@ html {
   animation-play-state: paused;
 }
 
+/* ─── Fast marquee for small screens ───────────────────────────────── */
+@media (max-width: 767px) {
+  .animate-marquee {
+    animation-duration: 12s;
+  }
+  .animate-marquee-reverse {
+    animation-duration: 12s;
+  }
+}
+

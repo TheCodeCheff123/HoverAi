@@ -180,12 +180,12 @@ export default function LandingPage() {
 
 	  <section id="home">
 		{/* header handler */}
-		<div className='h-[120px] w-full'>
+		<div className=' h-16 sm:h-30 w-full'>
 		<Header />
 		</div>
 
 		{/* hero and picture handler */}
-		<div className="w-full max-w-[90%] mx-auto px-5 sm:px-8 pt-10 grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-10 items-start">
+		<div className="w-full max-w-[90%] mx-auto px-5 sm:px-8 pt-10 grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-10 items-center">
 				
 			<div>
 			{/* Social proof */}
@@ -324,11 +324,11 @@ export default function LandingPage() {
 			transition={{ duration: 0.7, delay: 0.32, ease: EASE }}
 			>
 			<img
-				src={hero}
-				alt="Hover AI screen guidance demo"
-				className="w-full object-contain"
-				style={{ maxHeight: 'calc(100vh - 220px)' }}
-			/>
+					src={hero}
+					alt="Hover AI screen guidance demo"
+					className="w-full object-contain md:max-h-[calc(100vh-220px)]"
+					style={{ maxHeight: undefined }}
+				/>
 			</motion.div>
 		</div>
 
@@ -530,7 +530,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="faq" className="w-full max-w-[50%] mx-auto px-5 sm:px-8 py-24">
+      <section id="faq" className="w-full max-w-[90%] lg:max-w-[50%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
           <p className="text-[14px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             FAQ
@@ -638,21 +638,21 @@ function MarqueeRow({ items, reverse }: { items: typeof TOOLS; reverse: boolean 
   const repeated = [...items, ...items, ...items, ...items]
   return (
     <div
-      className="relative overflow-hidden py-5"
+      className="relative overflow-hidden py-3 sm:py-5"
       style={{
         maskImage: 'linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)',
         WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)',
       }}
     >
-      <div className={`${reverse ? 'animate-marquee-reverse' : 'animate-marquee'} flex gap-12`}>
+      <div className={`${reverse ? 'animate-marquee-reverse' : 'animate-marquee'} flex gap-7 sm:gap-12`}>
         {repeated.map((tool, i) =>
           tool.logo ? (
             <div
               key={`${tool.name}-${i}`}
-              className="flex items-center gap-3 shrink-0 opacity-50 hover:opacity-100 transition-opacity"
+              className="flex items-center gap-2 sm:gap-3 shrink-0 opacity-50 hover:opacity-100 transition-opacity"
             >
-              <img src={tool.logo} alt={tool.name} className="h-9 sm:h-11 w-auto object-contain" />
-                  <span className="text-[16px] text-white/70 whitespace-nowrap">{tool.name}</span>
+              <img src={tool.logo} alt={tool.name} className="h-5 sm:h-11 w-auto object-contain" />
+              <span className="text-[13px] sm:text-[16px] text-white/70 whitespace-nowrap">{tool.name}</span>
             </div>
           ) : null,
         )}

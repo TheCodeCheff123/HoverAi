@@ -23,7 +23,7 @@ export default function LandingFooter() {
         aria-hidden="true"
         className="relative w-full select-none"
         style={{
-          height: 'clamp(160px, 27vw, 420px)',
+          height: 'clamp(80px, 27vw, 420px)',
           overflow: 'visible',
         }}
       >
@@ -31,7 +31,7 @@ export default function LandingFooter() {
         <div
           style={{
             position: 'absolute',
-            top:    'calc(-72 / 393 * clamp(160px, 27vw, 420px))',
+            top:    'clamp(-20px, calc(-72 / 393 * 27vw), -46px)',
             left:   '0.33%',
             width:  '42.2%',   /* 603/1429 */
             transform: 'rotate(-4.58deg)',
@@ -100,14 +100,14 @@ export default function LandingFooter() {
       </div>
 
       {/* ── Links + tagline ─────────────────────────────────────────── */}
-      <div className="max-w-[90%] mx-auto px-5 sm:px-10 pt-10 pb-12 grid grid-cols-[1fr_2fr] gap-10 sm:gap-30">
+      <div className="max-w-[90%] mx-auto px-5 sm:px-10 pt-10 pb-12 md:grid md:grid-cols-[1fr_2fr] gap-10 sm:gap-30">
         {/* Tagline */}
-        <p className="text-[15px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
+        <p className="text-[15px] leading-relaxed mb-5" style={{ color: 'rgba(255,255,255,0.55)' }}>
           An agentic voice assistant for African creators — built to listen the way you actually speak.
         </p>
 
         {/* Nav columns */}
-        <div className="flex justify-between gap-16 sm:gap-20">
+        <div className="flex flex-col sm:flex-row justify-between gap-16 sm:gap-20">
           {[
             { heading: 'Product', links: [['Features','#features'],['Pricing','#pricing'],['Language','#languages']] },
             { heading: 'Company', links: [['About','#'],['Contact','#']] },
