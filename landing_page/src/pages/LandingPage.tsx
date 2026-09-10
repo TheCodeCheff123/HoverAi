@@ -105,7 +105,7 @@ const PLANS = [
     price: '$0',
     period: '/month',
     cta: 'Get Started Free',
-    ctaStyle: { background: 'transparent', border: '1.5px solid rgba(255,255,255,0.25)', color: '#fff' },
+    ctaStyle: { background: 'var(--color-neutral-700)', border: '1px solid #E5E5E5', color: '#fff' },
     popular: false,
     features: [
       '50 voice commands / month',
@@ -120,7 +120,7 @@ const PLANS = [
     price: '$15',
     period: '/month',
     cta: 'Upgrade to Pro',
-    ctaStyle: { background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)', color: '#fff' },
+    ctaStyle: { background: 'var(--color-indigo-400)', color: '#fff' },
     popular: true,
     features: [
       'Unlimited voice commands',
@@ -339,9 +339,6 @@ export default function LandingPage() {
 		</div>
 	  </section>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* FEATURES                                                    */}
-      {/* ══════════════════════════════════════════════════════════ */}
       <section id="features" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
           <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
@@ -373,10 +370,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* HOW IT WORKS                                                */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      <section id="how-it-works" className="w-full max-w-[1100px] mx-auto px-5 sm:px-8 py-24">
+      <section id="how-it-works" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
           <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             How it Works
@@ -386,12 +380,12 @@ export default function LandingPage() {
           </h2>
         </FadeUp>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-30">
           {STEPS.map((s, i) => (
             <FadeUp key={s.num} delay={i * 0.1}>
               <div>
                 <div
-                  className="w-12 h-12 rounded-full flex items-center justify-center mb-5 text-[15px] font-bold text-white"
+                  className="w-20 h-20 rounded-full flex items-center justify-center mb-5 text-[36px] font-bold text-white"
                   style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
                 >
                   {s.num}
@@ -404,56 +398,70 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* LANGUAGES                                                   */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      <section id="languages" className="w-full max-w-[1100px] mx-auto px-5 sm:px-8 pb-24">
-        <FadeUp>
-          <div
-            className="rounded-2xl p-8 md:p-10 flex flex-col md:flex-row md:items-center gap-8"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            {/* Left */}
-            <div className="md:max-w-[320px]">
-              <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
-                FAQ
-              </p>
-              <h2 className="text-[clamp(26px,3.5vw,40px)] font-extrabold text-white mb-4">
-                Good to know.
-              </h2>
-              <p className="text-[14px] text-white/50 leading-relaxed">
-                Six language profiles today, growing every quarter — trained on real code-switched speech, not textbook translations.
-              </p>
-            </div>
-
-            {/* Right — language pills */}
-            <div className="flex flex-wrap gap-3">
-              {LANGUAGES.map(l => (
-                <span
-                  key={l.label}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium text-white"
-                  style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.06)' }}
+      <section id="languages" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 pb-24">
+              <FadeUp>
+                <div
+                  className="relative rounded-3xl p-8 md:p-16 flex flex-col md:flex-row md:items-center justify-between gap-20 overflow-hidden"
+                  style={{
+                    background: 'var(--color-neutral-900)',
+                    border: '1px solid var(--color-neutral-800)',
+                  }}
                 >
-                  <span role="img" aria-label={l.label}>{l.flag}</span>
-                  {l.label}
-                </span>
-              ))}
-              <span
-                className="inline-flex items-center gap-1 px-4 py-2 rounded-full text-[13px] font-medium text-white/50"
-                style={{ border: '1px solid rgba(255,255,255,0.12)' }}
-              >
-                <RemixIcon name="ri-add-line" size={14} color="currentColor" />
-                more coming
-              </span>
-            </div>
-          </div>
-        </FadeUp>
-      </section>
+                  {/* Glow ellipse — top-right */}
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      top: '-152px',
+                      right: '-100px',
+                      width: '700px',
+                      height: '700px',
+                      borderRadius: '50%',
+                      background: '#9999FF',
+                      filter: 'blur(900px)',
+                      opacity: 1,
+                      pointerEvents: 'none',
+                    }}
+                  />
+      
+                  {/* Left */}
+                  <div className="relative md:max-w-[90%]">
+                    <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
+                      FAQ
+                    </p>
+                    <h2 className="text-[clamp(26px,3.5vw,40px)] font-extrabold text-white mb-4">
+                      Good to know.
+                    </h2>
+                    <p className="text-[14px] text-white/50 leading-relaxed">
+                      Six language profiles today, growing every quarter — trained on real code-switched speech, not textbook translations.
+                    </p>
+                  </div>
+      
+                  {/* Right — language pills */}
+                  <div className="relative flex flex-wrap gap-6">
+                    {LANGUAGES.map(l => (
+                      <span
+                        key={l.label}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium text-white"
+                        style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.06)' }}
+                      >
+                        <span role="img" aria-label={l.label}>{l.flag}</span>
+                        {l.label}
+                      </span>
+                    ))}
+                    <span
+                      className="inline-flex items-center gap-1 px-4 py-2 rounded-full text-[13px] font-medium text-white/50"
+                      style={{ border: '1px solid rgba(255,255,255,0.12)' }}
+                    >
+                      <RemixIcon name="ri-add-line" size={14} color="currentColor" />
+                      more coming
+                    </span>
+                  </div>
+                </div>
+              </FadeUp>
+	</section>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* PRICING                                                     */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      <section id="pricing" className="w-full max-w-[1100px] mx-auto px-5 sm:px-8 py-24">
+      <section id="pricing" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp className="text-center mb-12">
           <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             Pricing
@@ -463,30 +471,35 @@ export default function LandingPage() {
           </h2>
         </FadeUp>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-[800px] mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-200 mx-auto">
           {PLANS.map((plan, i) => (
             <FadeUp key={plan.name} delay={i * 0.1}>
               <div
-                className="rounded-2xl p-7 h-full flex flex-col relative"
+                className="rounded-4xl pt-16 pb-8 px-7 h-full flex flex-col relative"
                 style={{
                   background: plan.popular
-                    ? 'rgba(97,95,255,0.15)'
+                    ? 'var(--color-indigo-950)'
                     : 'rgba(255,255,255,0.04)',
                   border: plan.popular
-                    ? '1.5px solid rgba(97,95,255,0.6)'
-                    : '1px solid rgba(255,255,255,0.1)',
+                    ? '1px solid var(--color-indigo-400)'
+                    : '1px solid var(--color-neutral-700)',
                 }}
               >
-                {plan.popular && (
-                  <span
-                    className="absolute top-5 right-5 text-[11px] font-bold px-3 py-1 rounded-full text-white"
-                    style={{ background: 'rgba(97,95,255,0.7)' }}
-                  >
-                    Most Popular
-                  </span>
-                )}
-                <p className="text-[17px] font-bold text-white mb-1">{plan.name}</p>
-                <p className="text-[13px] text-white/50 mb-6">{plan.sub}</p>
+				<div className='flex justify-between items-start'>
+					<div>
+						<p className="text-[17px] font-bold text-white mb-1">{plan.name}</p>
+						<p className="text-[13px] text-white/50 mb-6">{plan.sub}</p>
+					</div>
+
+					{plan.popular && (
+						<span
+							className="text-[11px] font-bold px-3 py-1 rounded-full text-white"
+							style={{ background: 'var(--color-indigo-400)' }}
+						>
+							Most Popular
+						</span>
+					)}
+				</div>
 
                 {/* Price */}
                 <div className="flex items-baseline gap-1 mb-7">
@@ -496,7 +509,7 @@ export default function LandingPage() {
 
                 {/* CTA */}
                 <button
-                  className="w-full py-3 rounded-xl text-[14px] font-semibold mb-7 transition-opacity hover:opacity-90"
+                  className="w-full py-3 rounded-full text-[14px] font-semibold mb-7 transition-opacity hover:opacity-90"
                   style={plan.ctaStyle as React.CSSProperties}
                 >
                   {plan.cta}
@@ -506,7 +519,7 @@ export default function LandingPage() {
                 <ul className="flex flex-col gap-3 mt-auto">
                   {plan.features.map(f => (
                     <li key={f} className="flex items-center gap-2 text-[13px] text-white/70">
-                      <RemixIcon name="ri-check-line" size={15} color="#615fff" />
+                      <RemixIcon name="ri-check-line" size={15} color="#00A63E" />
                       {f}
                     </li>
                   ))}
@@ -517,10 +530,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* FAQ                                                         */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      <section id="faq" className="w-full max-w-[1100px] mx-auto px-5 sm:px-8 py-24">
+      <section id="faq" className="w-full max-w-[50%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
           <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             FAQ
@@ -530,20 +540,20 @@ export default function LandingPage() {
           </h2>
         </FadeUp>
 
-        <div className="flex flex-col gap-3 max-w-[760px]">
+        <div className="flex flex-col gap-3">
           {FAQS.map((item, i) => (
             <FadeUp key={item.q} delay={i * 0.06}>
               <div
-                className="rounded-xl overflow-hidden"
-                style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+                className="rounded-2xl bg-neutral-900 overflow-hidden"
+                style={{ border: '1px solid var(--color-neutral-700)' }}
               >
                 <button
-                  className="w-full flex items-center justify-between px-6 py-4 text-left"
+                  className="w-full flex items-center justify-between p-5 text-left"
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
                 >
                   <span className="text-[14px] font-medium text-white/80">{item.q}</span>
-                  <span className="ml-4 shrink-0 text-white/40 text-xl leading-none">
-                    {openFaq === i ? '×' : '+'}
+                  <span className="ml-4 shrink-0 transition-transform duration-200" style={{ transform: openFaq === i ? 'rotate(45deg)' : 'rotate(0deg)' }}>
+                    <RemixIcon name="ri-add-fill" size={18} color="var(--color-neutral-700)" />
                   </span>
                 </button>
                 <AnimatePresence initial={false}>
@@ -567,13 +577,10 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* CTA BANNER                                                  */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      <section className="w-full max-w-[1100px] mx-auto px-5 sm:px-8 pb-24">
+      <section className="w-full max-w-275 mx-auto px-5 sm:px-8 pb-24">
         <FadeUp>
           <div
-            className="rounded-3xl px-8 py-16 flex flex-col items-center text-center"
+            className="rounded-[48px] px-8 py-16 flex flex-col items-center text-center"
             style={{
               background: 'linear-gradient(135deg, #6366f1 0%, #22c55e 100%)',
             }}
