@@ -206,7 +206,7 @@ export default function LandingPage() {
 					/>
 				))}
 				</div>
-				<span className="text-[13px] text-white/70">
+				<span className="text-[15px] text-white/70">
 				Trusted by <span ref={ref} className="text-white font-semibold">{count.toLocaleString()}+</span> creators building in Lagos, Nairobi &amp; Accra
 				</span>
 			</motion.div>
@@ -214,7 +214,7 @@ export default function LandingPage() {
 			{/* Headline */}
 			<motion.h1
 				className="font-extrabold leading-[1.06] tracking-tight text-white mb-5"
-				style={{ fontSize: 'clamp(36px, 5.5vw, 72px)' }}
+				style={{ fontSize: 'clamp(42px, 6vw, 80px)' }}
 				initial={{ opacity: 0, y: 24 }}
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.6, delay: 0.18, ease: EASE }}
@@ -282,7 +282,7 @@ export default function LandingPage() {
 
 			{/* Sub */}
 			<motion.p
-				className="text-[15px] text-white/60 leading-relaxed mb-8 max-w-[560px]"
+				className="text-[17px] text-white/60 leading-relaxed mb-8 max-w-[560px]"
 				initial={{ opacity: 0, y: 16 }}
 				animate={{ opacity: 1, y: 0 }}
 				transition={{ duration: 0.5, delay: 0.28, ease: EASE }}
@@ -299,15 +299,15 @@ export default function LandingPage() {
 			>
 				<Link
 				to="/signup"
-				className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-[14px] font-semibold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+				className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full text-[16px] font-semibold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
 				style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
 				>
 				Get Started Free
-				<RemixIcon name="ri-arrow-right-line" size={16} color="#fff" />
+				<RemixIcon name="ri-arrow-right-line" size={18} color="#fff" />
 				</Link>
 				<a
 				href="#how-it-works"
-				className="inline-flex items-center gap-2 px-5 py-3 rounded-full text-[14px] font-semibold text-white/80 hover:text-white transition-colors whitespace-nowrap"
+				className="inline-flex items-center gap-2 px-6 py-3.5 rounded-full text-[16px] font-semibold text-white/80 hover:text-white transition-colors whitespace-nowrap"
 				style={{ border: '1.5px solid rgba(255,255,255,0.25)' }}
 				>
 				<RemixIcon name="ri-play-circle-line" size={16} color="currentColor" />
@@ -341,13 +341,13 @@ export default function LandingPage() {
 
       <section id="features" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
-          <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
+          <p className="text-[14px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             Features
           </p>
-          <h2 className="text-[clamp(30px,4vw,48px)] font-extrabold text-white leading-tight mb-4">
+          <h2 className="text-[clamp(32px,4.5vw,54px)] font-extrabold text-white leading-tight mb-4">
             Built for how creators<br />actually speak.
           </h2>
-          <p className="text-[15px] text-white/50 max-w-[400px] leading-relaxed mb-12">
+          <p className="text-[17px] text-white/50 max-w-[460px] leading-relaxed mb-12">
             Not another rigid voice command list. Hover AI understands intent, sees context, and shows — not just tells.
           </p>
         </FadeUp>
@@ -372,26 +372,26 @@ export default function LandingPage() {
 
       <section id="how-it-works" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
-          <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
+          <p className="text-[14px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             How it Works
           </p>
-          <h2 className="text-[clamp(28px,4vw,48px)] font-extrabold text-white leading-tight mb-16">
+          <h2 className="text-[clamp(32px,4.5vw,54px)] font-extrabold text-white leading-tight mb-16">
             From "how do I…" to done, in<br />three beats.
           </h2>
         </FadeUp>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-30">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
           {STEPS.map((s, i) => (
             <FadeUp key={s.num} delay={i * 0.1}>
               <div>
                 <div
-                  className="w-20 h-20 rounded-full flex items-center justify-center mb-5 text-[36px] font-bold text-white"
+                  className="w-16 h-16 rounded-full flex items-center justify-center mb-5 text-[20px] font-bold text-white"
                   style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
                 >
                   {s.num}
                 </div>
-                <h3 className="text-[17px] font-bold text-white mb-3">{s.title}</h3>
-                <p className="text-[14px] text-white/50 leading-relaxed">{s.body}</p>
+                <h3 className="text-[19px] font-bold text-white mb-3">{s.title}</h3>
+                <p className="text-[16px] text-white/50 leading-relaxed">{s.body}</p>
               </div>
             </FadeUp>
           ))}
@@ -426,13 +426,13 @@ export default function LandingPage() {
       
                   {/* Left */}
                   <div className="relative md:max-w-[90%]">
-                    <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
+                    <p className="text-[14px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
                       FAQ
                     </p>
-                    <h2 className="text-[clamp(26px,3.5vw,40px)] font-extrabold text-white mb-4">
+                    <h2 className="text-[clamp(28px,4vw,46px)] font-extrabold text-white mb-4">
                       Good to know.
                     </h2>
-                    <p className="text-[14px] text-white/50 leading-relaxed">
+                    <p className="text-[16px] text-white/50 leading-relaxed">
                       Six language profiles today, growing every quarter — trained on real code-switched speech, not textbook translations.
                     </p>
                   </div>
@@ -442,7 +442,7 @@ export default function LandingPage() {
                     {LANGUAGES.map(l => (
                       <span
                         key={l.label}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-medium text-white"
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[15px] font-medium text-white"
                         style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.06)' }}
                       >
                         <span role="img" aria-label={l.label}>{l.flag}</span>
@@ -450,7 +450,7 @@ export default function LandingPage() {
                       </span>
                     ))}
                     <span
-                      className="inline-flex items-center gap-1 px-4 py-2 rounded-full text-[13px] font-medium text-white/50"
+                      className="inline-flex items-center gap-1 px-5 py-2.5 rounded-full text-[15px] font-medium text-white/50"
                       style={{ border: '1px solid rgba(255,255,255,0.12)' }}
                     >
                       <RemixIcon name="ri-add-line" size={14} color="currentColor" />
@@ -463,19 +463,19 @@ export default function LandingPage() {
 
       <section id="pricing" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp className="text-center mb-12">
-          <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
+          <p className="text-[14px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             Pricing
           </p>
-          <h2 className="text-[clamp(28px,4vw,52px)] font-extrabold text-white leading-tight">
+          <h2 className="text-[clamp(32px,4.5vw,56px)] font-extrabold text-white leading-tight">
             Start free. Upgrade when it's<br />part of your workflow.
           </h2>
         </FadeUp>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-200 mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-[800px] mx-auto">
           {PLANS.map((plan, i) => (
             <FadeUp key={plan.name} delay={i * 0.1}>
               <div
-                className="rounded-4xl pt-16 pb-8 px-7 h-full flex flex-col relative"
+                className="rounded-4xl pt-16 pb-8 px-8 h-full flex flex-col relative"
                 style={{
                   background: plan.popular
                     ? 'var(--color-indigo-950)'
@@ -487,13 +487,13 @@ export default function LandingPage() {
               >
 				<div className='flex justify-between items-start'>
 					<div>
-						<p className="text-[17px] font-bold text-white mb-1">{plan.name}</p>
-						<p className="text-[13px] text-white/50 mb-6">{plan.sub}</p>
+						<p className="text-[19px] font-bold text-white mb-1">{plan.name}</p>
+						<p className="text-[15px] text-white/50 mb-6">{plan.sub}</p>
 					</div>
 
 					{plan.popular && (
 						<span
-							className="text-[11px] font-bold px-3 py-1 rounded-full text-white"
+							className="text-[13px] font-bold px-3 py-1 rounded-full text-white"
 							style={{ background: 'var(--color-indigo-400)' }}
 						>
 							Most Popular
@@ -501,15 +501,15 @@ export default function LandingPage() {
 					)}
 				</div>
 
-                {/* Price */}
-                <div className="flex items-baseline gap-1 mb-7">
-                  <span className="text-[48px] font-extrabold text-white leading-none">{plan.price}</span>
-                  <span className="text-[14px] text-white/50">{plan.period}</span>
-                </div>
+				            {/* Price */}
+				            <div className="flex items-baseline gap-1 mb-7">
+				              <span className="text-[52px] font-extrabold text-white leading-none">{plan.price}</span>
+				              <span className="text-[16px] text-white/50">{plan.period}</span>
+				            </div>
 
-                {/* CTA */}
-                <button
-                  className="w-full py-3 rounded-full text-[14px] font-semibold mb-7 transition-opacity hover:opacity-90"
+				            {/* CTA */}
+				            <button
+				              className="w-full py-3.5 rounded-full text-[16px] font-semibold mb-7 transition-opacity hover:opacity-90"
                   style={plan.ctaStyle as React.CSSProperties}
                 >
                   {plan.cta}
@@ -518,8 +518,8 @@ export default function LandingPage() {
                 {/* Features */}
                 <ul className="flex flex-col gap-3 mt-auto">
                   {plan.features.map(f => (
-                    <li key={f} className="flex items-center gap-2 text-[13px] text-white/70">
-                      <RemixIcon name="ri-check-line" size={15} color="#00A63E" />
+                    <li key={f} className="flex items-center gap-2 text-[15px] text-white/70">
+                      <RemixIcon name="ri-check-line" size={17} color="#00A63E" />
                       {f}
                     </li>
                   ))}
@@ -532,10 +532,10 @@ export default function LandingPage() {
 
       <section id="faq" className="w-full max-w-[50%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
-          <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
+          <p className="text-[14px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             FAQ
           </p>
-          <h2 className="text-[clamp(28px,4vw,48px)] font-extrabold text-white mb-10">
+          <h2 className="text-[clamp(32px,4.5vw,54px)] font-extrabold text-white mb-10">
             Good to know.
           </h2>
         </FadeUp>
@@ -548,10 +548,10 @@ export default function LandingPage() {
                 style={{ border: '1px solid var(--color-neutral-700)' }}
               >
                 <button
-                  className="w-full flex items-center justify-between p-5 text-left"
+                  className="w-full flex items-center justify-between p-6 text-left"
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
                 >
-                  <span className="text-[14px] font-medium text-white/80">{item.q}</span>
+                  <span className="text-[16px] font-medium text-white/80">{item.q}</span>
                   <span className="ml-4 shrink-0 transition-transform duration-200" style={{ transform: openFaq === i ? 'rotate(45deg)' : 'rotate(0deg)' }}>
                     <RemixIcon name="ri-add-fill" size={18} color="var(--color-neutral-700)" />
                   </span>
@@ -565,7 +565,7 @@ export default function LandingPage() {
                       transition={{ duration: 0.28, ease: EASE }}
                       style={{ overflow: 'hidden' }}
                     >
-                      <p className="px-6 pb-5 text-[13px] text-white/50 leading-relaxed">
+                      <p className="px-6 pb-6 text-[15px] text-white/50 leading-relaxed">
                         {item.a}
                       </p>
                     </motion.div>
@@ -577,26 +577,26 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="w-full max-w-275 mx-auto px-5 sm:px-8 pb-24">
+      <section className="w-full max-w-[90%] mx-auto px-5 sm:px-8 pb-24">
         <FadeUp>
           <div
-            className="rounded-[48px] px-8 py-16 flex flex-col items-center text-center"
+            className="rounded-[48px] px-8 py-20 flex flex-col items-center text-center"
             style={{
               background: 'linear-gradient(135deg, #6366f1 0%, #22c55e 100%)',
             }}
           >
-            <h2 className="text-[clamp(24px,4vw,44px)] font-extrabold text-white leading-tight mb-4 max-w-[500px]">
+            <h2 className="text-[clamp(28px,4.5vw,52px)] font-extrabold text-white leading-tight mb-4 max-w-[560px]">
               Your screen is about to start listening properly.
             </h2>
-            <p className="text-[14px] text-white/80 mb-8">
+            <p className="text-[17px] text-white/80 mb-8">
               Free to start. No credit card. Set up your shortcut in under a minute.
             </p>
             <Link
               to="/signup"
-              className="inline-flex items-center gap-2 px-7 py-3 rounded-full text-[14px] font-semibold text-indigo-700 bg-white hover:bg-white/90 transition-colors whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full text-[16px] font-semibold text-indigo-700 bg-white hover:bg-white/90 transition-colors whitespace-nowrap"
             >
               Get Started Free
-              <RemixIcon name="ri-arrow-right-line" size={15} color="currentColor" />
+              <RemixIcon name="ri-arrow-right-line" size={17} color="currentColor" />
             </Link>
           </div>
         </FadeUp>
@@ -614,21 +614,21 @@ export default function LandingPage() {
 function FeatureCard({ f }: { f: typeof FEATURES[number] }) {
   return (
     <div
-      className="rounded-2xl p-15 h-full flex flex-col"
+      className="rounded-2xl p-8 h-full flex flex-col"
       style={{
         background: f.accent ? '#1e2235' : 'rgba(255,255,255,0.03)',
-        minHeight: 250,
+        minHeight: 260,
       }}
     >
       {/* Icon chip */}
       <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center mb-auto"
+        className="w-12 h-12 rounded-xl flex items-center justify-center mb-auto"
         style={{ background: f.iconBg }}
       >
         <RemixIcon name={f.icon} color={f.iconColor} />
       </div>
-      <h3 className="text-[16px] font-bold text-white mb-2">{f.title}</h3>
-      <p className="text-[13.5px] leading-relaxed w-[450px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{f.body}</p>
+      <h3 className="text-[18px] font-bold text-white mb-2">{f.title}</h3>
+      <p className="text-[15px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>{f.body}</p>
     </div>
   )
 }
@@ -638,7 +638,7 @@ function MarqueeRow({ items, reverse }: { items: typeof TOOLS; reverse: boolean 
   const repeated = [...items, ...items, ...items, ...items]
   return (
     <div
-      className="relative overflow-hidden py-4"
+      className="relative overflow-hidden py-5"
       style={{
         maskImage: 'linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)',
         WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)',
@@ -651,8 +651,8 @@ function MarqueeRow({ items, reverse }: { items: typeof TOOLS; reverse: boolean 
               key={`${tool.name}-${i}`}
               className="flex items-center gap-3 shrink-0 opacity-50 hover:opacity-100 transition-opacity"
             >
-              <img src={tool.logo} alt={tool.name} className="h-8 sm:h-10 w-auto object-contain" />
-              <span className="text-[15px] text-white/70 whitespace-nowrap">{tool.name}</span>
+              <img src={tool.logo} alt={tool.name} className="h-9 sm:h-11 w-auto object-contain" />
+                  <span className="text-[16px] text-white/70 whitespace-nowrap">{tool.name}</span>
             </div>
           ) : null,
         )}

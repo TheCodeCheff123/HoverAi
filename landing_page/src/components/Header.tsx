@@ -52,7 +52,7 @@ export default function Header() {
             <a
               key={l.label}
               href={l.href}
-              className="text-[14px] text-white/70 hover:text-white transition-colors"
+              className="text-[15px] text-white/70 hover:text-white transition-colors"
             >
               {l.label}
             </a>
@@ -63,13 +63,13 @@ export default function Header() {
         <div className="flex items-center gap-6">
           <a
             href="#pricing"
-            className="hidden md:block text-[14px] text-white/80 hover:text-white transition-colors"
+            className="hidden md:block text-[15px] text-white/80 hover:text-white transition-colors"
           >
             Sign In
           </a>
           <Link
             to="/signup"
-            className="text-[13px] sm:text-[14px] font-semibold px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+            className="text-[14px] sm:text-[15px] font-semibold px-5 sm:px-6 py-2.5 rounded-full text-white transition-opacity hover:opacity-90 whitespace-nowrap"
             style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
           >
             Get Started Free
@@ -98,7 +98,7 @@ export default function Header() {
             <a
               key={l.label}
               href={l.href}
-              className="text-[15px] text-white/80 hover:text-white py-1"
+              className="text-[16px] text-white/80 hover:text-white py-1"
               onClick={() => setOpen(false)}
             >
               {l.label}

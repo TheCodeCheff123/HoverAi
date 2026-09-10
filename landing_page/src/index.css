@@ -340,8 +340,8 @@
   html, body {
     height: 100%;
     font-family: 'CreatoDisplay', -apple-system, "Segoe UI", system-ui, sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 16px;
+    line-height: 1.6;
     color: #ffffff;      
     background: var(--color-neutral-950); 
   }

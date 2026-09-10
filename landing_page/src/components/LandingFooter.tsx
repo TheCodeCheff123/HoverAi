@@ -88,7 +88,7 @@ export default function LandingFooter() {
                     opacity: 1,
                     pathLength: 1,
                     transition: {
-                      pathLength: { duration: 0.6, delay: i * 0.07, ease: EASE },
+                      pathLength: { duration: 0.1, delay: i * 1.0, ease: EASE },
                       opacity:    { duration: 0.01, delay: i * 0.07 },
                     },
                   },
@@ -100,27 +100,27 @@ export default function LandingFooter() {
       </div>
 
       {/* ── Links + tagline ─────────────────────────────────────────── */}
-      <div className="max-w-[90%] mx-auto px-5 sm:px-10 pt-10 pb-10 flex flex-col sm:flex-row gap-10 sm:gap-0 justify-between">
+      <div className="max-w-[90%] mx-auto px-5 sm:px-10 pt-10 pb-12 grid grid-cols-[1fr_2fr] gap-10 sm:gap-30">
         {/* Tagline */}
-        <p className="text-[13px] leading-relaxed sm:max-w-[200px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+        <p className="text-[15px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
           An agentic voice assistant for African creators — built to listen the way you actually speak.
         </p>
 
         {/* Nav columns */}
-        <div className="flex gap-16 sm:gap-20">
+        <div className="flex justify-between gap-16 sm:gap-20">
           {[
             { heading: 'Product', links: [['Features','#features'],['Pricing','#pricing'],['Language','#languages']] },
             { heading: 'Company', links: [['About','#'],['Contact','#']] },
             { heading: 'Product', links: [['Privacy Policy','#'],['Terms of Use','#']] },
           ].map(col => (
             <div key={col.heading + col.links[0][0]}>
-              <p className="text-[13px] font-semibold text-white mb-4">{col.heading}</p>
-              <ul className="flex flex-col gap-3">
+              <p className="text-[15px] font-semibold text-white mb-8">{col.heading}</p>
+              <ul className="flex flex-col gap-2.5">
                 {col.links.map(([label, href]) => (
                   <li key={label}>
                     <a
                       href={href}
-                      className="text-[13px] transition-colors hover:text-white"
+                      className="text-[14px] transition-colors hover:text-white"
                       style={{ color: 'rgba(255,255,255,0.55)' }}
                     >
                       {label}
@@ -138,10 +138,10 @@ export default function LandingFooter() {
         className="max-w-[90%] mx-auto px-5 sm:px-10 py-5 flex items-center justify-between flex-wrap gap-3"
         style={{ borderTop: '1px solid rgba(255,255,255,0.18)' }}
       >
-        <p className="text-[13px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-          &copy; 2026 Hover AI. All rights reserved.
+        <p className="text-[15px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+          &copy; {new Date().getFullYear()} Hover AI. All rights reserved.
         </p>
-        <p className="text-[13px] font-semibold text-white">
+        <p className="text-[15px] font-semibold text-white">
           Powered by MacedonLabs
         </p>
       </div>
