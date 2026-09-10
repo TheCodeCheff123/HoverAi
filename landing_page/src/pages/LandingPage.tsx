@@ -45,32 +45,36 @@ function useCountUp(target: number, duration = 1800) {
 /* ── Feature cards data ─────────────────────────────────────────────── */
 const FEATURES = [
   {
-    icon: 'ri-mic-2-line',
-    iconBg: 'linear-gradient(135deg, #7c86ff 0%, #615fff 100%)',
+    icon: 'ri-mic-fill',
+	iconColor: 'var(--color-indigo-500)',
+    iconBg: 'var(--color-indigo-200)',
     title: 'Code-switched voice input',
     body: 'Start a sentence in English, finish it in Yorùbá — Hover AI keeps up, mid-thought, without needing you to pick a "mode."',
-    dark: false,
+    accent: false, // lighter card
   },
   {
-    icon: 'ri-focus-3-line',
-    iconBg: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+    icon: 'ri-eye-fill',
+	iconColor: 'var(--color-green-300)',
+    iconBg: 'var(--color-green-600)',
     title: 'Live screen context',
     body: "Hover AI sees the app you're actually in — not a generic script it hopes applies.",
-    dark: true,
+    accent: true,  // darker navy card
   },
   {
-    icon: 'ri-cursor-line',
-    iconBg: 'linear-gradient(135deg, #fb923c 0%, #f97316 100%)',
+    icon: 'ri-fullscreen-fill',
+	iconColor: 'var(--color-orange-400)',
+    iconBg: 'var(--color-orange-200)',
     title: 'On-screen guidance',
     body: 'A glowing beacon lands right on the button to click — no hunting through menus.',
-    dark: true,
+    accent: true,  // darker navy card
   },
   {
-    icon: 'ri-lock-password-line',
-    iconBg: 'linear-gradient(135deg, #f472b6 0%, #ec4899 100%)',
+    icon: 'ri-lock-2-fill',
+	iconColor: 'var(--color-pink-600)',
+    iconBg: 'var(--color-pink-200)',
     title: 'Private by default',
     body: 'Screen and voice context are processed for the task at hand and never leave your device without your say-so. No silent recording, ever.',
-    dark: false,
+    accent: false, // lighter card
   },
 ]
 
@@ -338,7 +342,7 @@ export default function LandingPage() {
       {/* ══════════════════════════════════════════════════════════ */}
       {/* FEATURES                                                    */}
       {/* ══════════════════════════════════════════════════════════ */}
-      <section id="features" className="w-full max-w-[1100px] mx-auto px-5 sm:px-8 py-24">
+      <section id="features" className="w-full max-w-[90%] mx-auto px-5 sm:px-8 py-24">
         <FadeUp>
           <p className="text-[13px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
             Features
@@ -351,26 +355,19 @@ export default function LandingPage() {
           </p>
         </FadeUp>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {FEATURES.map((f, i) => (
+        {/* Row 1 — left narrow, right wide */}
+        <div className="grid grid-cols-1 md:grid-cols-[3fr_1fr] gap-7 mb-7">
+          {FEATURES.slice(0, 2).map((f, i) => (
             <FadeUp key={f.title} delay={i * 0.08}>
-              <div
-                className="rounded-2xl p-7 h-full"
-                style={{
-                  background: f.dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                {/* Icon */}
-                <div
-                  className="w-11 h-11 rounded-xl flex items-center justify-center mb-5"
-                  style={{ background: f.iconBg }}
-                >
-                  <RemixIcon name={f.icon} size={20} color="#fff" />
-                </div>
-                <h3 className="text-[17px] font-bold text-white mb-3">{f.title}</h3>
-                <p className="text-[14px] text-white/50 leading-relaxed">{f.body}</p>
-              </div>
+              <FeatureCard f={f} />
+            </FadeUp>
+          ))}
+        </div>
+        {/* Row 2 — left wide, right narrow */}
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_3fr] gap-7">
+          {FEATURES.slice(2, 4).map((f, i) => (
+            <FadeUp key={f.title} delay={(i + 2) * 0.08}>
+              <FeatureCard f={f} />
             </FadeUp>
           ))}
         </div>
@@ -605,6 +602,31 @@ export default function LandingPage() {
 }
 
 /* ── Marquee row helper ─────────────────────────────────────────────── */
+
+/* ── Feature card ───────────────────────────────────────────────────── */
+function FeatureCard({ f }: { f: typeof FEATURES[number] }) {
+  return (
+    <div
+      className="rounded-2xl p-15 h-full flex flex-col"
+      style={{
+        background: f.accent ? '#1e2235' : 'rgba(255,255,255,0.03)',
+        minHeight: 250,
+      }}
+    >
+      {/* Icon chip */}
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center mb-auto"
+        style={{ background: f.iconBg }}
+      >
+        <RemixIcon name={f.icon} color={f.iconColor} />
+      </div>
+      <h3 className="text-[16px] font-bold text-white mb-2">{f.title}</h3>
+      <p className="text-[13.5px] leading-relaxed w-[450px]" style={{ color: 'rgba(255,255,255,0.45)' }}>{f.body}</p>
+    </div>
+  )
+}
+
+
 function MarqueeRow({ items, reverse }: { items: typeof TOOLS; reverse: boolean }) {
   const repeated = [...items, ...items, ...items, ...items]
   return (
