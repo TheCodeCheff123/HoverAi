@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import LandingNav from '@/components/LandingNav'
 import LandingFooter from '@/components/LandingFooter'
 import RemixIcon from '@/components/RemixIcon'
 import FadeUp from '@/components/FadeUp'
 import hero from '../../assets/images/hero.png'
 import { TOOLS } from '@/data/tools'
+import Header from '@/components/Header'
 
 /* ── Ease curve used throughout ─────────────────────────────────────── */
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1]
@@ -174,122 +174,166 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#0a0a0a' }}>
 
-      {/* ── Navigation ────────────────────────────────────────────── */}
-      <LandingNav />
+	  <section id="home">
+		{/* header handler */}
+		<div className='h-[120px] w-full'>
+		<Header />
+		</div>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* HERO                                                        */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      <section className="w-full max-w-[1100px] mx-auto px-5 sm:px-8 pt-32 pb-16 md:pt-36 md:pb-20 grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-10 items-center">
+		{/* hero and picture handler */}
+		<div className="w-full max-w-[90%] mx-auto px-5 sm:px-8 pt-10 grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-10 items-start">
+				
+			<div>
+			{/* Social proof */}
+			<motion.div
+				className="flex items-center gap-2 mb-6 flex-wrap"
+				initial={{ opacity: 0, y: 16 }}
+				animate={{ opacity: 1, y: 0 }}
+				transition={{ duration: 0.5, delay: 0.1, ease: EASE }}
+			>
+				<div className="flex -space-x-2 shrink-0">
+				{[0, 1, 2].map(i => (
+					<img
+					key={i}
+					src="/avatar.png"
+					alt="user avatar"
+					className="w-7 h-7 rounded-full border-2 object-cover"
+					style={{ borderColor: '#0a0a0a', zIndex: 3 - i }}
+					/>
+				))}
+				</div>
+				<span className="text-[13px] text-white/70">
+				Trusted by <span ref={ref} className="text-white font-semibold">{count.toLocaleString()}+</span> creators building in Lagos, Nairobi &amp; Accra
+				</span>
+			</motion.div>
 
-        {/* Left */}
-        <div>
-          {/* Social proof */}
-          <motion.div
-            className="flex items-center gap-2 mb-6 flex-wrap"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1, ease: EASE }}
-          >
-            <div className="flex -space-x-2 shrink-0">
-              {[0, 1, 2].map(i => (
-                <img
-                  key={i}
-                  src="/avatar.png"
-                  alt="user avatar"
-                  className="w-7 h-7 rounded-full border-2 object-cover"
-                  style={{ borderColor: '#0a0a0a', zIndex: 3 - i }}
-                />
-              ))}
-            </div>
-            <span className="text-[13px] text-white/70">
-              Trusted by <span ref={ref} className="text-white font-semibold">{count.toLocaleString()}+</span> creators building in Lagos, Nairobi &amp; Accra
-            </span>
-          </motion.div>
+			{/* Headline */}
+			<motion.h1
+				className="font-extrabold leading-[1.06] tracking-tight text-white mb-5"
+				style={{ fontSize: 'clamp(36px, 5.5vw, 72px)' }}
+				initial={{ opacity: 0, y: 24 }}
+				animate={{ opacity: 1, y: 0 }}
+				transition={{ duration: 0.6, delay: 0.18, ease: EASE }}
+			>
+				Talk to your screen<br />
+				the way you{' '}
+				<span
+				style={{
+					backgroundImage: 'linear-gradient(90deg, #ffffff 0%, #7c86ff 35%, #24f992 70%)',
+					WebkitBackgroundClip: 'text',
+					WebkitTextFillColor: 'transparent',
+					backgroundClip: 'text',
+				}}
+				>
+				actually
+				</span>
+				<span
+				style={{
+					backgroundImage: 'linear-gradient(90.18deg, #FFFFFF 0.16%, #7C86FF 26.35%, #24F992 63.32%)',
+					WebkitBackgroundClip: 'text',
+					WebkitTextFillColor: 'transparent',
+					backgroundClip: 'text',
+				}}
+				>
+				{' '}talk{' '}
+				</span>
 
-          {/* Headline */}
-          <motion.h1
-            className="font-extrabold leading-[1.06] tracking-tight text-white mb-5"
-            style={{ fontSize: 'clamp(36px, 5.5vw, 72px)' }}
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.18, ease: EASE }}
-          >
-            Talk to your screen<br />
-            the way you{' '}
-            <span
-              style={{
-                backgroundImage: 'linear-gradient(90deg, #ffffff 0%, #7c86ff 35%, #24f992 70%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}
-            >
-              actually
-            </span>
-            {' '}talk
-          </motion.h1>
+				<svg
+					viewBox="0 0 408 41"
+					fill="none"
+					xmlns="http://www.w3.org/2000/svg"
+					style={{
+						display: 'inline-block',
+						width: 'clamp(200px, 30vw, 420px)',
+						height: '0.8em',
+						verticalAlign: 'middle',
+						overflow: 'visible',
+					}}
+				>
+					<defs>
+						<linearGradient id="stroke-grad" x1="1.31406" y1="20.3755" x2="408" y2="20.3755" gradientUnits="userSpaceOnUse">
+							<stop stopColor="#ffffff" />
+							<stop offset="0.41" stopColor="#7c86ff" />
+							<stop offset="1" stopColor="#24f992" />
+						</linearGradient>
+					</defs>
+					<motion.path
+						d="M1.31406 35.7516C45.9807 23.5849 142.714 0.551555 172.314 5.75155C201.914 10.9516 155.647 27.9182 128.814 35.7516C183.981 23.5849 316.914 0.551554 407.314 5.75155"
+						stroke="url(#stroke-grad)"
+						strokeWidth="8"
+						strokeLinecap="round"
+						fill="none"
+						initial={{ pathLength: 0, opacity: 0 }}
+						animate={{ pathLength: [0, 1, 1, 0], opacity: [0, 1, 1, 0] }}
+						transition={{
+							duration: 3,
+							ease: 'easeInOut',
+							repeat: Infinity,
+							repeatDelay: 0.6,
+							times: [0, 0.45, 0.7, 1],
+						}}
+					/>
+				</svg>
+			</motion.h1>
 
-          {/* Sub */}
-          <motion.p
-            className="text-[15px] text-white/60 leading-relaxed mb-8 max-w-[460px]"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.28, ease: EASE }}
-          >
-            Hover AI listens to code-switched voice commands, sees exactly what's on your screen, and draws a glowing beacon to the button you need — mid-sentence, mid-language, mid-task.
-          </motion.p>
+			{/* Sub */}
+			<motion.p
+				className="text-[15px] text-white/60 leading-relaxed mb-8 max-w-[560px]"
+				initial={{ opacity: 0, y: 16 }}
+				animate={{ opacity: 1, y: 0 }}
+				transition={{ duration: 0.5, delay: 0.28, ease: EASE }}
+			>
+				Hover AI listens to code-switched voice commands, sees exactly what's on your screen, and draws a glowing beacon to the button you need — mid-sentence, mid-language, mid-task.
+			</motion.p>
 
-          {/* CTAs */}
-          <motion.div
-            className="flex items-center gap-3 flex-wrap"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.38, ease: EASE }}
-          >
-            <Link
-              to="/signup"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-[14px] font-semibold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
-              style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
-            >
-              Get Started Free
-              <RemixIcon name="ri-arrow-right-line" size={16} color="#fff" />
-            </Link>
-            <a
-              href="#how-it-works"
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-full text-[14px] font-semibold text-white/80 hover:text-white transition-colors whitespace-nowrap"
-              style={{ border: '1.5px solid rgba(255,255,255,0.25)' }}
-            >
-              <RemixIcon name="ri-play-circle-line" size={16} color="currentColor" />
-              See it work
-            </a>
-          </motion.div>
-        </div>
+			{/* CTAs */}
+			<motion.div
+				className="flex items-center gap-3 flex-wrap"
+				initial={{ opacity: 0, y: 16 }}
+				animate={{ opacity: 1, y: 0 }}
+				transition={{ duration: 0.5, delay: 0.38, ease: EASE }}
+			>
+				<Link
+				to="/signup"
+				className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-[14px] font-semibold text-white transition-opacity hover:opacity-90 whitespace-nowrap"
+				style={{ background: 'linear-gradient(135deg, #615fff 0%, #432dd7 100%)' }}
+				>
+				Get Started Free
+				<RemixIcon name="ri-arrow-right-line" size={16} color="#fff" />
+				</Link>
+				<a
+				href="#how-it-works"
+				className="inline-flex items-center gap-2 px-5 py-3 rounded-full text-[14px] font-semibold text-white/80 hover:text-white transition-colors whitespace-nowrap"
+				style={{ border: '1.5px solid rgba(255,255,255,0.25)' }}
+				>
+				<RemixIcon name="ri-play-circle-line" size={16} color="currentColor" />
+				See it work
+				</a>
+			</motion.div>
+			</div>
 
-        {/* Right — hero image */}
-        <motion.div
-          className="flex items-center justify-center"
-          initial={{ opacity: 0, scale: 0.96, y: 24 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.32, ease: EASE }}
-        >
-          <img
-            src={hero}
-            alt="Hover AI screen guidance demo"
-            className="w-full max-w-none object-contain"
-          />
-        </motion.div>
-      </section>
+			{/* Right — hero image */}
+			<motion.div
+			className="flex items-center justify-center"
+			initial={{ opacity: 0, scale: 0.96, y: 24 }}
+			animate={{ opacity: 1, scale: 1, y: 0 }}
+			transition={{ duration: 0.7, delay: 0.32, ease: EASE }}
+			>
+			<img
+				src={hero}
+				alt="Hover AI screen guidance demo"
+				className="w-full object-contain"
+				style={{ maxHeight: 'calc(100vh - 220px)' }}
+			/>
+			</motion.div>
+		</div>
 
-      {/* ══════════════════════════════════════════════════════════ */}
-      {/* TOOLS MARQUEE                                               */}
-      {/* ══════════════════════════════════════════════════════════ */}
-      <div className="w-full overflow-hidden py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        {/* Row 1 — left */}
-        <MarqueeRow items={firstHalf} reverse={false} />
-        {/* Row 2 — right */}
-        <MarqueeRow items={secondHalf} reverse={true} />
-      </div>
+		{/* tools marquee */}
+		<div className="w-full overflow-hidden py-6">
+			<MarqueeRow items={firstHalf} reverse={false} />
+			<MarqueeRow items={secondHalf} reverse={true} />
+		</div>
+	  </section>
 
       {/* ══════════════════════════════════════════════════════════ */}
       {/* FEATURES                                                    */}
@@ -565,21 +609,21 @@ function MarqueeRow({ items, reverse }: { items: typeof TOOLS; reverse: boolean 
   const repeated = [...items, ...items, ...items, ...items]
   return (
     <div
-      className="relative overflow-hidden py-3"
+      className="relative overflow-hidden py-4"
       style={{
         maskImage: 'linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)',
         WebkitMaskImage: 'linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)',
       }}
     >
-      <div className={`${reverse ? 'animate-marquee-reverse' : 'animate-marquee'} flex gap-8`}>
+      <div className={`${reverse ? 'animate-marquee-reverse' : 'animate-marquee'} flex gap-12`}>
         {repeated.map((tool, i) =>
           tool.logo ? (
             <div
               key={`${tool.name}-${i}`}
-              className="flex items-center gap-2 shrink-0 opacity-50 hover:opacity-100 transition-opacity"
+              className="flex items-center gap-3 shrink-0 opacity-50 hover:opacity-100 transition-opacity"
             >
-              <img src={tool.logo} alt={tool.name} className="h-5 sm:h-6 w-auto object-contain" />
-              <span className="text-[13px] text-white/70 whitespace-nowrap">{tool.name}</span>
+              <img src={tool.logo} alt={tool.name} className="h-8 sm:h-10 w-auto object-contain" />
+              <span className="text-[15px] text-white/70 whitespace-nowrap">{tool.name}</span>
             </div>
           ) : null,
         )}
