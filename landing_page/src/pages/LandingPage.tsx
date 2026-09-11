@@ -190,7 +190,13 @@ export default function LandingPage() {
 				<a
 				href="#how-it-works"
 				className="inline-flex items-center gap-2 px-6 py-3.5 rounded-full text-[16px] font-semibold text-white/80 hover:text-white transition-colors whitespace-nowrap"
-				style={{ border: '1.5px solid rgba(255,255,255,0.25)' }}
+				style={{
+				  background: [
+				    'linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.01) 100%) border-box',
+				    'rgba(255,255,255,0.04) padding-box',
+				  ].join(', '),
+				  border: '1.5px solid transparent',
+				}}
 				>
 				<RemixIcon name="ri-play-circle-line" size={16} color="currentColor" />
 				See it work
@@ -329,7 +335,13 @@ export default function LandingPage() {
                       <span
                         key={l.label}
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[15px] font-medium text-white"
-                        style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.06)' }}
+                        style={{
+                          background: [
+                            'linear-gradient(135deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.01) 100%) border-box',
+                            'rgba(255,255,255,0.06) padding-box',
+                          ].join(', '),
+                          border: '1px solid transparent',
+                        }}
                       >
                         <span role="img" aria-label={l.label}>{l.flag}</span>
                         {l.label}
@@ -337,7 +349,13 @@ export default function LandingPage() {
                     ))}
                     <span
                       className="inline-flex items-center gap-1 px-5 py-2.5 rounded-full text-[15px] font-medium text-white/50"
-                      style={{ border: '1px solid rgba(255,255,255,0.12)' }}
+                      style={{
+                        background: [
+                          'linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.02) 60%, rgba(255,255,255,0.005) 100%) border-box',
+                          'transparent padding-box',
+                        ].join(', '),
+                        border: '1px solid transparent',
+                      }}
                     >
                       <RemixIcon name="ri-add-line" size={14} color="currentColor" />
                       more coming
@@ -362,13 +380,20 @@ export default function LandingPage() {
             <FadeUp key={plan.name} delay={i * 0.1}>
               <div
                 className="rounded-4xl pt-16 pb-8 px-8 h-full flex flex-col relative"
-                style={{
-                  background: plan.popular
-                    ? 'var(--color-indigo-950)'
-                    : 'rgba(255,255,255,0.04)',
-                  border: plan.popular
-                    ? '1px solid var(--color-indigo-400)'
-                    : '1px solid var(--color-neutral-700)',
+                style={plan.popular ? {
+                  /* Pro card — stays solid indigo, intentional visual dominance */
+                  background: 'var(--color-indigo-950)',
+                  border: '1px solid var(--color-indigo-400)',
+                } : {
+                  /* Free card — glass fill; edge highlight makes it distinct
+                   * from the page without competing with the Pro card */
+                  background: [
+                    'linear-gradient(180deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.01) 100%) padding-box',
+                    'linear-gradient(135deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.06) 35%, rgba(255,255,255,0.01) 70%, rgba(255,255,255,0.005) 100%) border-box',
+                    'rgba(255,255,255,0.03) padding-box',
+                  ].join(', '),
+                  border: '1px solid transparent',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.30), 0 1px 4px rgba(0,0,0,0.20)',
                 }}
               >
 				<div className='flex justify-between items-start'>
@@ -430,8 +455,18 @@ export default function LandingPage() {
           {FAQS.map((item, i) => (
             <FadeUp key={item.q} delay={i * 0.06}>
               <div
-                className="rounded-2xl bg-neutral-900 overflow-hidden"
-                style={{ border: '1px solid var(--color-neutral-700)' }}
+                className="rounded-2xl overflow-hidden"
+                style={{
+                  /* Glass edge only — no backdrop-filter, rows sit on the page.
+                   * Edge highlight separates rows from the near-black background. */
+                  background: [
+                    'linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%) padding-box',
+                    'linear-gradient(135deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 35%, rgba(255,255,255,0.01) 75%, rgba(255,255,255,0.004) 100%) border-box',
+                    'rgba(20,18,30,0.70) padding-box',
+                  ].join(', '),
+                  border: '1px solid transparent',
+                  boxShadow: '0 2px 12px rgba(0,0,0,0.25)',
+                }}
               >
                 <button
                   className="w-full flex items-center justify-between p-6 text-left"
@@ -502,7 +537,15 @@ function FeatureCard({ f }: { f: typeof FEATURES[number] }) {
     <div
       className="rounded-2xl p-8 h-full flex flex-col"
       style={{
-        background: f.accent ? '#1e2235' : 'rgba(255,255,255,0.03)',
+        /* Glass fill — no backdrop-filter (cards aren't floating layers),
+         * edge highlight + tinted fill gives depth on the dark page */
+        background: [
+          'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%) padding-box',
+          'linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 30%, rgba(255,255,255,0.01) 70%, rgba(255,255,255,0.005) 100%) border-box',
+          `${f.accent ? 'rgba(18,16,44,0.80)' : 'rgba(255,255,255,0.03)'} padding-box`,
+        ].join(', '),
+        border: '1px solid transparent',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.25)',
         minHeight: 260,
       }}
     >
