@@ -6,6 +6,9 @@ const api = {
   openExternal: (url: string) => shell.openExternal(url),
   requestPermission: (id: string): Promise<'granted' | 'denied'> =>
     ipcRenderer.invoke('request-permission', id),
+  launchOverlay: () => ipcRenderer.send('launch-overlay'),
+  overlayMouseActive: (active: boolean) => ipcRenderer.send('overlay-mouse-active', active),
+  overlayMove: (x: number, y: number) => ipcRenderer.send('overlay-move', x, y),
 }
 
 if (process.contextIsolated) {
