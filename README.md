@@ -1,4 +1,4 @@
-![Hover AI](og-image.png)
+![Hover AI](og-image.webp)
 
 # Hover AI
 

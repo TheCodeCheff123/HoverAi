@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import LandingFooter from '@/components/LandingFooter'
 import RemixIcon from '@/components/RemixIcon'
 import FadeUp from '@/components/FadeUp'
-import hero from '../../assets/images/hero.png'
+import hero from '../../assets/images/hero.webp'
 import { TOOLS } from '@/data/tools'
 import { FEATURES, STEPS, PLANS, FAQS, LANGUAGES } from '@/data/landing'
 import Header from '@/components/Header'
@@ -204,14 +204,28 @@ export default function LandingPage() {
 			</motion.div>
 			</div>
 
-			{/* Right — hero image */}
-			<motion.div
-			className="flex items-center justify-center"
-			initial={{ opacity: 0, scale: 0.96, y: 24 }}
-			animate={{ opacity: 1, scale: 1, y: 0 }}
-			transition={{ duration: 0.7, delay: 0.32, ease: EASE }}
-			>
-			<img
+			{/* Right — hero image (cinematic stagger) */}
+			<div className="relative flex items-center justify-center">
+				{/* Layer 0 — ambient glow behind the image, enters last */}
+				<motion.div
+					aria-hidden="true"
+					className="absolute inset-0 pointer-events-none"
+					initial={{ opacity: 0, scale: 0.7 }}
+					animate={{ opacity: 1, scale: 1 }}
+					transition={{ duration: 1.1, delay: 0.82, ease: EASE }}
+					style={{
+						background: 'radial-gradient(ellipse 70% 55% at 55% 50%, rgba(97,95,255,0.18) 0%, transparent 70%)',
+					}}
+				/>
+				{/* Layer 1 — image frame slides up from slight depth */}
+				<motion.div
+					className="relative w-full"
+					initial={{ opacity: 0, y: 40, scale: 0.94 }}
+					animate={{ opacity: 1, y: 0, scale: 1 }}
+					transition={{ duration: 0.72, delay: 0.32, ease: EASE }}
+				>
+					{/* Layer 2 — image itself fades in and sharpens up slightly after the frame */}
+					<motion.img
 						src={hero}
 						alt="Hover AI interface showing code-switched voice guidance on a desktop screen"
 						className="w-full object-contain md:max-h-[calc(100vh-220px)]"
@@ -220,8 +234,12 @@ export default function LandingPage() {
 						loading="eager"
 						fetchPriority="high"
 						decoding="async"
+						initial={{ opacity: 0, scale: 1.04, filter: 'blur(6px)' }}
+						animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+						transition={{ duration: 0.65, delay: 0.55, ease: EASE }}
 					/>
-			</motion.div>
+				</motion.div>
+			</div>
 		</div>
 
 		{/* tools marquee */}
