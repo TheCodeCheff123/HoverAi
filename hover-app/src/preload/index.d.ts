@@ -5,6 +5,7 @@ declare global {
     electron: ElectronAPI
     api: {
       openExternal: (url: string) => Promise<void>
+      requestPermission: (id: string) => Promise<'granted' | 'denied'>
     }
   }
 }

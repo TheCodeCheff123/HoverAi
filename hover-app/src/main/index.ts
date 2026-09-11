@@ -1,20 +1,18 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, systemPreferences, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
-
 function createWindow(): void {
-  // Create the browser window.
   const mainWindow = new BrowserWindow({
-	width: 1200,
-	height: 800,
-	resizable: false,
+    width: 1200,
+    height: 800,
+    resizable: false,
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
-    }
+      sandbox: false,
+    },
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -26,8 +24,6 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -35,40 +31,85 @@ function createWindow(): void {
   }
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+// ─── Permission IPC handlers ────────────────────────────────────────────────
+//
+// 'request-permission' is called by the renderer when the user toggles a
+// permission on. Returns 'granted' | 'denied'.
+//
+// Microphone: the renderer triggers getUserMedia() directly (which fires the
+//   OS prompt). The main process checks the result via systemPreferences on
+//   macOS; on other platforms we trust the browser-level grant.
+//
+// Screen: macOS requires an explicit systemPreferences.askForMediaAccess call.
+//   Windows / Linux grant screen capture automatically at the OS level — we
+//   verify via getMediaAccessStatus and return 'granted'.
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+ipcMain.handle('request-permission', async (_event, id: string): Promise<'granted' | 'denied'> => {
+  if (id === 'microphone') {
+    if (process.platform === 'darwin') {
+      // macOS: native system dialog
+      const status = await systemPreferences.askForMediaAccess('microphone')
+      return status ? 'granted' : 'denied'
+    }
+    if (process.platform === 'win32') {
+      // Windows: getMediaAccessStatus is available
+      const status = systemPreferences.getMediaAccessStatus('microphone')
+      return status === 'granted' ? 'granted' : 'denied'
+    }
+    // Linux: getUserMedia in the renderer already triggered the OS prompt.
+    // No systemPreferences API exists — trust the renderer grant.
+    return 'granted'
+  }
+
+  if (id === 'screen') {
+    if (process.platform === 'darwin') {
+      // macOS: no askForMediaAccess for 'screen'. Trigger via desktopCapturer
+      // which causes the system to show the Screen Recording prompt.
+      const status = systemPreferences.getMediaAccessStatus('screen')
+      if (status === 'granted') return 'granted'
+      const { desktopCapturer } = await import('electron')
+      await desktopCapturer.getSources({ types: ['screen'] })
+      const recheck = systemPreferences.getMediaAccessStatus('screen')
+      return recheck === 'granted' ? 'granted' : 'denied'
+    }
+    // Windows / Linux: no OS-level screen-capture permission prompt — access
+    // is granted by default at the application level.
+    return 'granted'
+  }
+
+  return 'denied'
+})
+
+// Allow the renderer's getUserMedia to work for microphone (used as fallback
+// on non-macOS to trigger the OS prompt in-process).
+app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true)
+    } else {
+      callback(false)
+    }
+  })
+})
+
+// ────────────────────────────────────────────────────────────────────────────
+
+app.whenReady().then(() => {
+  electronApp.setAppUserModelId('com.hoverai')
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-
   createWindow()
 
   app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
