@@ -1,83 +1,190 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 
-    <!-- Primary SEO -->
-    <title>Hover AI — Speak. See. Find.</title>
+    <!-- ─── Primary SEO ───────────────────────────────────────────────── -->
+    <title>Hover AI — Talk to Your Screen the Way You Actually Talk</title>
     <meta
       name="description"
-      content="Hover AI understands code-switched voice commands, sees what's on your screen, and guides you to the button you need with a glowing visual beacon."
+      content="Hover AI understands code-switched voice commands in Yorùbá, Pidgin, Igbo, Hausa & English. It sees your screen and guides you to the exact button you need — mid-sentence, mid-language, mid-task."
     />
     <meta
       name="keywords"
-      content="Hover AI, AI assistant, voice assistant, voice commands, code switching, screen understanding, visual AI, UI navigation, accessibility, computer vision, voice controlled interface"
+      content="Hover AI, AI voice assistant, code switching, Yoruba voice, Pidgin AI, African AI, screen guidance, voice commands, UI navigation, accessibility, Nigerian tech"
     />
     <meta name="author" content="Hover AI" />
-    <meta name="robots" content="index, follow" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="theme-color" content="#0a0a0a" />
 
-    <!-- Change this when you have your real production domain -->
-    <link rel="canonical" href="https://your-domain.com" />
+    <!-- ─── Canonical ─────────────────────────────────────────────────── -->
+    <link rel="canonical" href="https://hover-ai-iota.vercel.app" />
 
-    <!-- Open Graph -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://your-domain.com" />
-    <meta
-      property="og:title"
-      content="Hover AI — Speak. See. Find."
-    />
+    <!-- ─── Open Graph ────────────────────────────────────────────────── -->
+    <meta property="og:type"        content="website" />
+    <meta property="og:url"         content="https://hover-ai-iota.vercel.app" />
+    <meta property="og:site_name"   content="Hover AI" />
+    <meta property="og:locale"      content="en_US" />
+    <meta property="og:title"       content="Hover AI — Talk to Your Screen the Way You Actually Talk" />
     <meta
       property="og:description"
-      content="Talk naturally. Hover AI sees your screen and guides you to exactly what you need with a visual beacon."
+      content="Code-switched voice commands. Live screen context. A glowing beacon to the button you need. Free to start."
     />
-    <meta property="og:image" content="/og-image.png" />
-    <meta property="og:site_name" content="Hover AI" />
-    <meta property="og:locale" content="en_US" />
+    <meta property="og:image"              content="https://hover-ai-iota.vercel.app/og-image.png" />
+    <meta property="og:image:width"        content="1200" />
+    <meta property="og:image:height"       content="630" />
+    <meta property="og:image:alt"          content="Hover AI — voice-guided screen assistant for African creators" />
+    <meta property="og:image:type"         content="image/png" />
 
-    <!-- Twitter / X -->
-    <meta name="twitter:card" content="summary_large_image" />
-
-    <meta
-      name="twitter:title"
-      content="Hover AI — Speak. See. Find."
-    />
-
+    <!-- ─── Twitter / X ─────────────────────────────────────────────── -->
+    <meta name="twitter:card"        content="summary_large_image" />
+    <meta name="twitter:site"        content="@hoveraiapp" />
+    <meta name="twitter:creator"     content="@hoveraiapp" />
+    <meta name="twitter:title"       content="Hover AI — Talk to Your Screen the Way You Actually Talk" />
     <meta
       name="twitter:description"
-      content="An AI assistant that understands code-switched voice commands, sees your screen, and guides you to the UI element you need."
+      content="Code-switched voice commands. Live screen context. A glowing beacon to the button you need. Free to start."
     />
+    <meta name="twitter:image"       content="https://hover-ai-iota.vercel.app/og-image.png" />
+    <meta name="twitter:image:alt"   content="Hover AI app screenshot" />
 
-    <meta name="twitter:image" content="/og-image.png" />
+    <!-- ─── Favicon set ──────────────────────────────────────────────── -->
+    <link rel="icon"             type="image/png" sizes="32x32" href="/logo.png" />
+    <link rel="icon"             type="image/png" sizes="16x16" href="/logo.png" />
+    <link rel="apple-touch-icon"                  sizes="180x180" href="/logo.png" />
+    <link rel="shortcut icon"    type="image/png" href="/logo.png" />
+    <meta name="msapplication-TileImage"  content="/logo.png" />
+    <meta name="msapplication-TileColor" content="#615fff" />
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/favicon.png" />
+    <!-- ─── Preconnect / DNS prefetch ────────────────────────────────── -->
+    <link rel="preconnect"    href="https://fonts.cdnfonts.com" crossorigin />
+    <link rel="dns-prefetch"  href="https://fonts.cdnfonts.com" />
 
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.cdnfonts.com" />
+    <!-- ─── Critical resource hints ──────────────────────────────────── -->
+    <!-- Preload the hero image so it doesn't block LCP -->
+    <link rel="preload" as="image" href="/landing/hero.png" type="image/png" fetchpriority="high" />
+
+    <!-- ─── Fonts ────────────────────────────────────────────────────── -->
     <link
       rel="stylesheet"
       href="https://fonts.cdnfonts.com/css/neue-machina"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/neue-machina" />
+    </noscript>
 
-    <!-- Remix Icons -->
-    <link
-      rel="stylesheet"
-      href="/node_modules/remixicon/fonts/remixicon.css"
-    />
-
-    <!-- Structured Data -->
+    <!-- ─── Structured Data: SoftwareApplication ─────────────────────── -->
     <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Hover AI",
-        "description": "An AI assistant that understands code-switched voice commands, sees what is on your screen, and visually guides you to the UI element you need.",
-        "applicationCategory": "AIApplication",
-        "operatingSystem": "Web",
-        "url": "https://your-domain.com"
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Hover AI",
+      "url": "https://hover-ai-iota.vercel.app",
+      "logo": "https://hover-ai-iota.vercel.app/logo.png",
+      "description": "An agentic voice assistant for African creators — understands code-switched speech in Yorùbá, Pidgin, Igbo, Hausa and English, sees your screen, and guides you to the exact UI element you need.",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Web, macOS, Windows",
+      "offers": [
+        {
+          "@type": "Offer",
+          "name": "Personal",
+          "price": "0",
+          "priceCurrency": "USD",
+          "description": "50 voice commands per month, 2 language profiles, on-screen guidance"
+        },
+        {
+          "@type": "Offer",
+          "name": "Creator Pro",
+          "price": "15",
+          "priceCurrency": "USD",
+          "description": "Unlimited voice commands, all 6 language profiles, priority screen-context speed"
+        }
+      ],
+      "featureList": [
+        "Code-switched voice input (Yorùbá, Pidgin, Igbo, Hausa, English)",
+        "Live screen context awareness",
+        "On-screen glowing beacon guidance",
+        "Private by default — no silent recording"
+      ],
+      "screenshot": "https://hover-ai-iota.vercel.app/og-image.png",
+      "publisher": {
+        "@type": "Organization",
+        "name": "MacedonLabs",
+        "url": "https://hover-ai-iota.vercel.app"
       }
+    }
+    </script>
+
+    <!-- ─── Structured Data: FAQPage ─────────────────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What does \"code-switched\" actually mean here?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "It means you can speak naturally across multiple languages in a single sentence — e.g. \"abeg help me find the export button\" — and Hover AI understands your intent without needing you to switch modes."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which languages are supported today?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Nigeria + Pidgin, Yorùbá, Igbo, Hausa, and English. More language profiles ship every quarter."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is my screen and voice data private?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Screen captures and voice audio are processed ephemerally for the task at hand and never stored or sent to third parties without your explicit consent."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which apps does it work with?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Any desktop app — design tools (Figma, Photoshop, Illustrator), browsers, productivity apps (Notion, VS Code), and more."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I change the shortcut or turn off screen access?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Absolutely. You control the activation shortcut, screen-capture permissions, and microphone access from the settings panel at any time."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <!-- ─── Structured Data: WebSite (Sitelinks searchbox) ───────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Hover AI",
+      "url": "https://hover-ai-iota.vercel.app",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://hover-ai-iota.vercel.app/?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
     </script>
   </head>
 

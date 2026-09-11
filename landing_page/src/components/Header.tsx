@@ -43,7 +43,7 @@ export default function Header() {
     >
       {/* Pill wrapper */}
       <div
-        className='flex items-center justify-between w-full lg:max-w-[90%] p-4 sm:p-5 md:px-6 lg:border lg:border-[var(--color-brand-400)] transition-[border-radius] duration-300 lg:rounded-full'
+        className='flex items-center justify-between w-full lg:max-w-[90%] p-4 sm:p-5 md:px-6 lg:border lg:border-(--color-brand-400) transition-[border-radius] duration-300 lg:rounded-full'
         style={{
           background: 'rgba(10,10,10,0.75)',
           backdropFilter: 'blur(14px) saturate(180%)',
@@ -85,7 +85,7 @@ export default function Header() {
 
           {/* Mobile hamburger / close */}
           <button
-            className="lg:hidden flex flex-col gap-[5px] ml-2 relative w-5 h-5 items-center justify-center"
+            className="lg:hidden flex flex-col gap-1.25 ml-2 relative w-5 h-5 items-center justify-center"
             onClick={() => setOpen(o => !o)}
             aria-label={open ? 'Close menu' : 'Open menu'}
           >

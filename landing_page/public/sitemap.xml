@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+
+  <!-- Landing / Home -->
+  <url>
+    <loc>https://hoverai.app/</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://hoverai.app/og-image.png</image:loc>
+      <image:title>Hover AI — Talk to Your Screen the Way You Actually Talk</image:title>
+    </image:image>
+  </url>
+
+  <!-- Download page (planned) -->
+  <url>
+    <loc>https://hoverai.app/download</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <!-- Pricing (anchor, but still valuable for indexing intent) -->
+  <url>
+    <loc>https://hoverai.app/#pricing</loc>
+    <lastmod>2025-01-01</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+</urlset>

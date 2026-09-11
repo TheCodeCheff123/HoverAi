@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+
+# Block private/app routes that shouldn't be indexed
+Disallow: /signup
+Disallow: /login
+Disallow: /dashboard
+Disallow: /api/
+
+# Crawl-delay for well-behaved bots
+Crawl-delay: 10
+
+# Sitemap
+Sitemap: https://hoverai.app/sitemap.xml

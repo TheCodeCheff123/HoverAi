@@ -46,32 +46,32 @@ function useCountUp(target: number, duration = 1800) {
 const FEATURES = [
   {
     icon: 'ri-mic-fill',
-	iconColor: 'var(--color-indigo-500)',
-    iconBg: 'var(--color-indigo-200)',
+    iconColor: 'var(--color-indigo-300)',
+    iconBg: 'var(--color-indigo-700)',
     title: 'Code-switched voice input',
     body: 'Start a sentence in English, finish it in Yorùbá — Hover AI keeps up, mid-thought, without needing you to pick a "mode."',
     accent: false, // lighter card
   },
   {
     icon: 'ri-eye-fill',
-	iconColor: 'var(--color-green-300)',
-    iconBg: 'var(--color-green-600)',
+    iconColor: 'var(--color-green-300)',
+    iconBg: 'var(--color-green-700)',
     title: 'Live screen context',
     body: "Hover AI sees the app you're actually in — not a generic script it hopes applies.",
     accent: true,  // darker navy card
   },
   {
     icon: 'ri-fullscreen-fill',
-	iconColor: 'var(--color-orange-400)',
-    iconBg: 'var(--color-orange-200)',
+    iconColor: 'var(--color-orange-300)',
+    iconBg: 'var(--color-orange-700)',
     title: 'On-screen guidance',
     body: 'A glowing beacon lands right on the button to click — no hunting through menus.',
     accent: true,  // darker navy card
   },
   {
     icon: 'ri-lock-2-fill',
-	iconColor: 'var(--color-pink-600)',
-    iconBg: 'var(--color-pink-200)',
+    iconColor: 'var(--color-pink-300)',
+    iconBg: 'var(--color-pink-700)',
     title: 'Private by default',
     body: 'Screen and voice context are processed for the task at hand and never leave your device without your say-so. No silent recording, ever.',
     accent: false, // lighter card
@@ -178,7 +178,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#0a0a0a' }}>
 
-	  <section id="home">
+   <section id="home" aria-label="Hero">
 		{/* header handler */}
 		<div className=' h-16 sm:h-30 w-full'>
 		<Header />
@@ -196,16 +196,20 @@ export default function LandingPage() {
 				transition={{ duration: 0.5, delay: 0.1, ease: EASE }}
 			>
 				<div className="flex -space-x-2 shrink-0">
-				{[0, 1, 2].map(i => (
-					<img
-					key={i}
-					src="/avatar.png"
-					alt="user avatar"
-					className="w-7 h-7 rounded-full border-2 object-cover"
-					style={{ borderColor: '#0a0a0a', zIndex: 3 - i }}
-					/>
-				))}
-				</div>
+					{[0, 1, 2].map(i => (
+						<img
+						key={i}
+						src="/avatar.png"
+						alt="Hover AI user"
+						width={28}
+						height={28}
+						loading="lazy"
+						decoding="async"
+						className="w-7 h-7 rounded-full border-2 object-cover"
+						style={{ borderColor: '#0a0a0a', zIndex: 3 - i }}
+						/>
+					))}
+					</div>
 				<span className="text-[15px] text-white/70">
 				Trusted by <span ref={ref} className="text-white font-semibold">{count.toLocaleString()}+</span> creators building in Lagos, Nairobi &amp; Accra
 				</span>
@@ -324,11 +328,15 @@ export default function LandingPage() {
 			transition={{ duration: 0.7, delay: 0.32, ease: EASE }}
 			>
 			<img
-					src={hero}
-					alt="Hover AI screen guidance demo"
-					className="w-full object-contain md:max-h-[calc(100vh-220px)]"
-					style={{ maxHeight: undefined }}
-				/>
+						src={hero}
+						alt="Hover AI interface showing code-switched voice guidance on a desktop screen"
+						className="w-full object-contain md:max-h-[calc(100vh-220px)]"
+						width={900}
+						height={600}
+						loading="eager"
+						fetchPriority="high"
+						decoding="async"
+					/>
 			</motion.div>
 		</div>
 
@@ -427,10 +435,10 @@ export default function LandingPage() {
                   {/* Left */}
                   <div className="relative md:max-w-[90%]">
                     <p className="text-[14px] font-bold tracking-widest uppercase mb-3" style={{ color: '#615fff' }}>
-                      FAQ
+                      Languages
                     </p>
                     <h2 className="text-[clamp(28px,4vw,46px)] font-extrabold text-white mb-4">
-                      Good to know.
+                      Built on real speech.
                     </h2>
                     <p className="text-[16px] text-white/50 leading-relaxed">
                       Six language profiles today, growing every quarter — trained on real code-switched speech, not textbook translations.
@@ -553,7 +561,7 @@ export default function LandingPage() {
                 >
                   <span className="text-[16px] font-medium text-white/80">{item.q}</span>
                   <span className="ml-4 shrink-0 transition-transform duration-200" style={{ transform: openFaq === i ? 'rotate(45deg)' : 'rotate(0deg)' }}>
-                    <RemixIcon name="ri-add-fill" size={18} color="var(--color-neutral-700)" />
+                    <RemixIcon name="ri-add-fill" size={18} color="rgba(255,255,255,0.45)" />
                   </span>
                 </button>
                 <AnimatePresence initial={false}>
@@ -651,7 +659,7 @@ function MarqueeRow({ items, reverse }: { items: typeof TOOLS; reverse: boolean 
               key={`${tool.name}-${i}`}
               className="flex items-center gap-2 sm:gap-3 shrink-0 opacity-50 hover:opacity-100 transition-opacity"
             >
-              <img src={tool.logo} alt={tool.name} className="h-5 sm:h-11 w-auto object-contain" />
+              <img src={tool.logo} alt={tool.name} className="h-5 sm:h-11 w-auto object-contain" loading="lazy" decoding="async" />
               <span className="text-[13px] sm:text-[16px] text-white/70 whitespace-nowrap">{tool.name}</span>
             </div>
           ) : null,
