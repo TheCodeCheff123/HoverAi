@@ -43,11 +43,32 @@ export default function Header() {
     >
       {/* Pill wrapper */}
       <div
-        className='flex items-center justify-between w-full lg:max-w-[90%] p-4 sm:p-5 md:px-6 lg:border lg:border-(--color-brand-400) transition-[border-radius] duration-300 lg:rounded-full'
+        className='flex items-center justify-between w-full lg:max-w-[90%] p-4 sm:p-5 md:px-6 transition-[border-radius] duration-300 lg:rounded-full'
         style={{
-          background: 'rgba(10,10,10,0.75)',
-          backdropFilter: 'blur(14px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(14px) saturate(180%)',
+          /* ── Glass material ─────────────────────────────────────────────
+           *  Layer A (padding-box): specular sheen — top of pill catches
+           *                         overhead ambient light
+           *  Layer B (border-box):  directional edge highlight — top-left
+           *                         bright, bottom-right dim (light source
+           *                         convention: top-left)
+           *  Layer C (padding-box): deep indigo tinted fill — real
+           *                         transparency + brand identity
+           * ──────────────────────────────────────────────────────────────*/
+          background: [
+            'linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.01) 100%) padding-box',
+            'linear-gradient(135deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.08) 30%, rgba(255,255,255,0.02) 65%, rgba(255,255,255,0.01) 100%) border-box',
+            'rgba(14,10,36,0.52) padding-box',
+          ].join(', '),
+          border: '1px solid transparent',
+          /* ── Backdrop: blur + boost brightness so frost reads on dark bg */
+          backdropFilter: 'blur(20px) saturate(160%) brightness(1.08)',
+          WebkitBackdropFilter: 'blur(20px) saturate(160%) brightness(1.08)',
+          /* ── Shadow: ambient depth + contact + outer rim ────────────── */
+          boxShadow: [
+            '0 8px 32px rgba(0,0,0,0.50)',
+            '0 2px 8px rgba(0,0,0,0.35)',
+            '0 0 0 0.5px rgba(255,255,255,0.10)',
+          ].join(', '),
         }}
       >
         {/* Logo */}
