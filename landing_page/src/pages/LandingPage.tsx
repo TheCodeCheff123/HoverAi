@@ -8,6 +8,7 @@ import hero from '../../assets/images/hero.webp'
 import { TOOLS } from '@/data/tools'
 import { FEATURES, STEPS, PLANS, FAQS, LANGUAGES } from '@/data/landing'
 import Header from '@/components/Header'
+import { handleAnchorClick } from '@/hooks/useScrollTo'
 
 /* ── Ease curve used throughout ─────────────────────────────────────── */
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1]
@@ -189,6 +190,7 @@ export default function LandingPage() {
 				</Link>
 				<a
 				href="#how-it-works"
+				onClick={handleAnchorClick}
 				className="inline-flex items-center gap-2 px-6 py-3.5 rounded-full text-[16px] font-semibold text-white/80 hover:text-white transition-colors whitespace-nowrap"
 				style={{
 				  background: [

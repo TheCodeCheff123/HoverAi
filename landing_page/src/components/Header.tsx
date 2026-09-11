@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import HoverAiLogo from './Logo'
 import RemixIcon from './RemixIcon'
+import { handleAnchorClick } from '@/hooks/useScrollTo'
 
 const NAV_LINKS = [
   { label: 'Features',     href: '#features' },
@@ -81,6 +82,7 @@ export default function Header() {
               key={l.label}
               href={l.href}
               className="text-[15px] text-white/70 hover:text-white transition-colors"
+              onClick={handleAnchorClick}
             >
               {l.label}
             </a>
@@ -92,6 +94,7 @@ export default function Header() {
           <a
             href="#pricing"
             className="hidden lg:block text-[15px] text-white/80 hover:text-white transition-colors"
+            onClick={handleAnchorClick}
           >
             Sign In
           </a>
@@ -160,7 +163,7 @@ export default function Header() {
                   key={l.label}
                   href={l.href}
                   className="text-[22px] font-semibold text-white/80 hover:text-white py-3 border-b border-white/[0.07] transition-colors"
-                  onClick={() => setOpen(false)}
+                  onClick={e => { handleAnchorClick(e); setOpen(false) }}
                   initial={{ opacity: 0, x: -16 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.08 + i * 0.05, duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
@@ -190,7 +193,7 @@ export default function Header() {
                 href="#pricing"
                 className="w-full flex items-center justify-center py-4 rounded-full text-[15px] font-semibold text-white/70"
                 style={{ border: '1px solid rgba(255,255,255,0.15)' }}
-                onClick={() => setOpen(false)}
+                onClick={e => { handleAnchorClick(e); setOpen(false) }}
               >
                 Sign In
               </a>

@@ -17,15 +17,11 @@
 @font-face { font-family: 'CreatoDisplay'; src: url('../../assets/fonts/creato_display/CreatoDisplay-Black.otf')         format('opentype'); font-weight: 900; font-style: normal;  }
 @font-face { font-family: 'CreatoDisplay'; src: url('../../assets/fonts/creato_display/CreatoDisplay-BlackItalic.otf')   format('opentype'); font-weight: 900; font-style: italic;  }
 
-/* ─── NeueMachina ───────────────────────────────────────────────────── */
-@font-face { font-family: 'NeueMachina'; src: url('../../assets/fonts/neue_machina/NeueMachina-Light.otf')     format('opentype'); font-weight: 300; font-style: normal; }
-@font-face { font-family: 'NeueMachina'; src: url('../../assets/fonts/neue_machina/NeueMachina-Regular.otf')   format('opentype'); font-weight: 400; font-style: normal; }
-@font-face { font-family: 'NeueMachina'; src: url('../../assets/fonts/neue_machina/NeueMachina-Ultrabold.otf') format('opentype'); font-weight: 800; font-style: normal; }
 
 /* ─── Font utility classes ───────────────────────────────────────────── */
 .font-creato         { font-family: 'CreatoDisplay', sans-serif; }
 .font-creato-italic  { font-family: 'CreatoDisplay', sans-serif; font-style: italic; }
-.font-machina        { font-family: 'NeueMachina',   sans-serif; }
+
 
 /* ─── Brand colour tokens ───────────────────────────────────────────── */
 @theme {
