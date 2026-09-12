@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AuthPanel from '@renderer/components/AuthPanel'
+import LangDropdown, { LANGUAGES, type Language } from '@renderer/components/LangDropdown'
 
 type Tab = 'signin' | 'signup'
 
@@ -31,7 +32,7 @@ export default function AuthPage({ onComplete }: AuthPageProps) {
   const [prevTab, setPrevTab] = useState<Tab>('signin')
   const [showPassword, setShowPassword] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
-  const [lang, setLang] = useState<{ value: string; label: string }>(LANGUAGES[0])
+  const [lang, setLang] = useState<Language>(LANGUAGES[0])
 
   const dir = tab === 'signup' && prevTab === 'signin' ? 1 : -1
 
@@ -194,10 +195,11 @@ export default function AuthPage({ onComplete }: AuthPageProps) {
                   <motion.div variants={itemVariants}>
                     <Field label="Language preference">
                       <LangDropdown
-                        value={lang}
+                        value={lang.value}
                         open={langOpen}
                         onToggle={() => setLangOpen(v => !v)}
                         onSelect={(l) => { setLang(l); setLangOpen(false) }}
+                        variant="glass"
                       />
                     </Field>
                   </motion.div>
@@ -319,129 +321,6 @@ function PasswordInput({ show, onToggle }: { show: boolean; onToggle: () => void
       >
         <i className={show ? 'ri-eye-off-line' : 'ri-eye-line'} style={{ fontSize: 18 }} />
       </button>
-    </div>
-  )
-}
-
-const LANGUAGES = [
-  { value: 'en-pidgin', label: 'English + pidgin' },
-  { value: 'en',        label: 'English' },
-  { value: 'fr',        label: 'French' },
-  { value: 'yo',        label: 'Yoruba' },
-  { value: 'ha',        label: 'Hausa' },
-  { value: 'ig',        label: 'Igbo' },
-]
-
-function LangDropdown({
-  value,
-  open,
-  onToggle,
-  onSelect,
-}: {
-  value: { value: string; label: string }
-  open: boolean
-  onToggle: () => void
-  onSelect: (l: { value: string; label: string }) => void
-}) {
-  return (
-    <div style={{ position: 'relative' }}>
-      {/* Trigger */}
-      <button
-        type="button"
-        onClick={onToggle}
-        style={{
-          ...baseInput,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          cursor: 'pointer',
-          border: open ? '1px solid var(--border-focus)' : '1px solid transparent',
-          boxShadow: open ? '0 0 0 3px rgba(108,99,255,0.15)' : 'none',
-          color: 'var(--text-secondary)',
-          width: '100%',
-        }}
-      >
-        <span style={{ color: 'var(--text-primary)' }}>{value.label}</span>
-        <motion.i
-          className="ri-arrow-down-s-line"
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] as const }}
-          style={{ fontSize: 20, color: 'var(--text-secondary)', display: 'block' }}
-        />
-      </button>
-
-      {/* Dropdown panel */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            className="lang-dropdown-panel"
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const } }}
-            exit={{ opacity: 0, y: 4, scale: 0.97, transition: { duration: 0.15 } }}
-            style={{
-              position: 'absolute',
-              bottom: 'calc(100% + 6px)',
-              left: 0,
-              right: 0,
-              /* Full glass — this panel floats over the form, backdrop-filter frosts it */
-              background: [
-                'linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%) padding-box',
-                'linear-gradient(135deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.07) 35%, rgba(255,255,255,0.01) 100%) border-box',
-                'rgba(16,14,36,0.82) padding-box',
-              ].join(', '),
-              border: '1px solid transparent',
-              backdropFilter: 'blur(20px) saturate(160%) brightness(1.06)',
-              WebkitBackdropFilter: 'blur(20px) saturate(160%) brightness(1.06)',
-              borderRadius: 14,
-              maxHeight: 232,
-              overflowY: 'auto',
-              overflowX: 'hidden',
-              zIndex: 50,
-              boxShadow: [
-                '0 -8px 32px rgba(0,0,0,0.55)',
-                '0 -2px 8px rgba(0,0,0,0.35)',
-                '0 0 0 0.5px rgba(255,255,255,0.08)',
-              ].join(', '),
-              scrollbarWidth: 'none',
-            }}
-          >
-            {LANGUAGES.map((l, i) => (
-              <button
-                key={l.value}
-                type="button"
-                onClick={() => onSelect(l)}
-                style={{
-                  width: '100%',
-                  padding: '11px 18px',
-                  background: l.value === value.value ? 'rgba(108,99,255,0.15)' : 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: l.value === value.value ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontSize: 15,
-                  fontWeight: l.value === value.value ? 600 : 400,
-                  textAlign: 'left',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  borderBottom: i < LANGUAGES.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                  transition: 'background 0.15s',
-                }}
-                onMouseEnter={(e) => {
-                  if (l.value !== value.value) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
-                }}
-                onMouseLeave={(e) => {
-                  if (l.value !== value.value) e.currentTarget.style.background = 'transparent'
-                }}
-              >
-                {l.label}
-                {l.value === value.value && (
-                  <i className="ri-check-line" style={{ fontSize: 16, color: 'var(--accent)' }} />
-                )}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

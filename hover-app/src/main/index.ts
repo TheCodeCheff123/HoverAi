@@ -26,6 +26,8 @@ export type AppSettings = {
   micSensitivity: number       // 1 – 10
   soundEffects: boolean
   notifications: boolean
+  language: string
+  wakeWordEnabled: boolean
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -36,6 +38,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   micSensitivity: 5,
   soundEffects: true,
   notifications: true,
+  language: 'en-pidgin',
+  wakeWordEnabled: false,
 }
 
 function getSettingsPath(): string {
@@ -60,6 +64,7 @@ function saveSettings(settings: AppSettings): void {
 // ─── Tray icon — HoverAI branded PNG from resources/ ─────────────────────────
 
 let tray: Tray | null = null
+let settingsWindow: BrowserWindow | null = null
 
 function createTrayIcon(): Electron.NativeImage {
   // resources/icon.png  — 32×32 purple circle with white HoverAI logo mark
@@ -88,7 +93,42 @@ function createTrayIcon(): Electron.NativeImage {
 
 let activeShortcutKey = ''
 
-function createTray(onOpenOverlay: () => void, onQuit: () => void): void {
+function openSettingsWindow(): void {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.focus()
+    return
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 480,
+    height: 680,
+    resizable: false,
+    frame: false,
+    transparent: false,
+    show: false,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+    },
+  })
+
+  settingsWindow.on('ready-to-show', () => {
+    settingsWindow?.show()
+  })
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    settingsWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/settings.html`)
+  } else {
+    settingsWindow.loadFile(join(__dirname, '../renderer/settings.html'))
+  }
+}
+
+function createTray(_onOpenOverlay: () => void, onQuit: () => void): void {
   if (tray) return
 
   const icon = createTrayIcon()
@@ -99,42 +139,25 @@ function createTray(onOpenOverlay: () => void, onQuit: () => void): void {
     {
       label: 'HoverAI',
       enabled: false,
-      // Shown as a non-clickable header
     },
     { type: 'separator' },
     {
-      label: 'Show overlay',
-      click: onOpenOverlay,
-    },
-    {
-      label: 'Hide overlay',
-      click: () => {
-        if (overlayWindow && !overlayWindow.isDestroyed()) {
-          overlayWindow.hide()
-        }
-      },
+      label: 'Settings',
+      click: openSettingsWindow,
     },
     { type: 'separator' },
     {
-      label: 'Quit HoverAI',
+      label: 'Stop HoverAI',
       click: onQuit,
     },
   ])
 
   tray.setContextMenu(contextMenu)
 
-  // Left-click on the tray icon toggles the overlay (Windows / Linux behaviour)
-  // On macOS left-click shows the context menu by default; this is fine.
+  // Left-click opens Settings (Windows / Linux).
+  // On macOS left-click shows the context menu by default — that's fine.
   tray.on('click', () => {
-    if (overlayWindow && !overlayWindow.isDestroyed()) {
-      if (overlayWindow.isVisible()) {
-        overlayWindow.hide()
-      } else {
-        overlayWindow.show()
-      }
-    } else {
-      onOpenOverlay()
-    }
+    openSettingsWindow()
   })
 }
 
@@ -389,6 +412,47 @@ ipcMain.handle('save-settings', (_event, settings: AppSettings): void => {
   saveSettings(settings)
   // Apply side-effects immediately
   app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin })
+})
+
+ipcMain.handle('get-active-shortcut', (): string => activeShortcutKey)
+
+ipcMain.on('open-settings', () => {
+  openSettingsWindow()
+})
+
+ipcMain.on('close-settings-window', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  win?.close()
+})
+
+ipcMain.on('sign-out', () => {
+  // Close settings window
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.close()
+  }
+  // Unregister shortcut so onboarding can re-claim it
+  if (activeShortcutKey) {
+    globalShortcut.unregister(activeShortcutKey)
+    activeShortcutKey = ''
+  }
+  // Re-open the onboarding window (auth page)
+  createWindow()
+})
+
+ipcMain.handle('register-shortcut-from-settings', (_event, key: string): boolean => {
+  if (activeShortcutKey) {
+    globalShortcut.unregister(activeShortcutKey)
+    activeShortcutKey = ''
+  }
+  const ok = globalShortcut.register(key, () => {
+    triggerCapture().catch(console.error)
+  })
+  if (ok) {
+    activeShortcutKey = key
+    tray?.setToolTip(`HoverAI — press ${key} to capture`)
+    console.log(`[shortcut] re-registered from settings: ${key}`)
+  }
+  return ok
 })
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
