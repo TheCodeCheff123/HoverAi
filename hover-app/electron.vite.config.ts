@@ -8,7 +8,7 @@ export default defineConfig({
   preload: {},
   renderer: {
     server: {
-      allowedHosts: 'incremental-judgemental-duncan.ngrok-free.dev',
+      allowedHosts: ['incremental-judgemental-duncan.ngrok-free.dev'],
     },
     resolve: {
       alias: {
@@ -21,6 +21,7 @@ export default defineConfig({
         input: {
           index: resolve('src/renderer/index.html'),
           overlay: resolve('src/renderer/overlay.html'),
+          settings: resolve('src/renderer/settings.html'),
         }
       }
     }

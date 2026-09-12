@@ -11,6 +11,11 @@ const api = {
   registerShortcut: (key: string): Promise<boolean> => ipcRenderer.invoke('register-shortcut', key),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('save-settings', settings),
+  getActiveShortcut: (): Promise<string> => ipcRenderer.invoke('get-active-shortcut'),
+  registerShortcutFromSettings: (key: string): Promise<boolean> =>
+    ipcRenderer.invoke('register-shortcut-from-settings', key),
+  closeSettingsWindow: () => ipcRenderer.send('close-settings-window'),
+  signOut: () => ipcRenderer.send('sign-out'),
 
   // Screen capture
   onCaptureStart: (cb: (screenshotDataUrl: string, shortcutKey: string) => void) => {
