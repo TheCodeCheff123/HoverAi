@@ -1,265 +1,224 @@
-import { useState, useRef, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect, useRef, useState, useCallback } from 'react'
 
-// ─── Sub-panel types ─────────────────────────────────────────────────────────
-type Panel = 'history' | 'settings' | null
+type CaptureRegion = { x: number; y: number; w: number; h: number }
+
+type DragState = {
+  startX: number
+  startY: number
+} | null
 
 export default function OverlayWidget() {
-  const [hovered, setHovered] = useState(false)
-  const [micActive, setMicActive] = useState(false)
-  const [panel, setPanel] = useState<Panel>(null)
-  const [dragging, setDragging] = useState(false)
+  const [screenshot, setScreenshot] = useState<string | null>(null)
+  const [shortcutKey, setShortcutKey] = useState('')
+  const [drag, setDrag] = useState<DragState>(null)
+  const [rect, setRect] = useState<CaptureRegion | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  const ease = [0.22, 1, 0.36, 1] as const
-
-  // ── Drag-to-move ───────────────────────────────────────────────────────────
-  // The overlay window is focusable:false so OS window-drag won't work.
-  // We track pointer offset on mousedown, then send absolute screen positions
-  // on mousemove to the main process which calls win.setPosition().
-  const dragRef = useRef<{ startX: number; startY: number; winX: number; winY: number } | null>(null)
-
-  const onMicMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only start drag on left-button hold, not a quick click
-    if (e.button !== 0) return
-    e.preventDefault()
-
-    // screenX/Y give us cursor position in screen coordinates
-    const { screenX, screenY } = e
-    // Current window position — electron-vite makes window.screenX/Y available
-    const winX = window.screenX
-    const winY = window.screenY
-
-    dragRef.current = { startX: screenX, startY: screenY, winX, winY }
-    setDragging(true)
-
-    function onMouseMove(me: MouseEvent) {
-      if (!dragRef.current) return
-      const dx = me.screenX - dragRef.current.startX
-      const dy = me.screenY - dragRef.current.startY
-      window.api.overlayMove(dragRef.current.winX + dx, dragRef.current.winY + dy)
+  // ── Listen for capture-start / capture-end from main ──────────────────────
+  useEffect(() => {
+    const unsubStart = window.api.onCaptureStart((dataUrl, key) => {
+      setScreenshot(dataUrl)
+      setShortcutKey(key)
+      setDrag(null)
+      setRect(null)
+    })
+    const unsubEnd = window.api.onCaptureEnd(() => {
+      setScreenshot(null)
+      setDrag(null)
+      setRect(null)
+    })
+    return () => {
+      unsubStart()
+      unsubEnd()
     }
-
-    function onMouseUp() {
-      dragRef.current = null
-      setDragging(false)
-      window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup', onMouseUp)
-    }
-
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
   }, [])
 
-  function openPanel(p: Panel) {
-    // Don't open panels if we just finished a drag
-    if (dragging) return
-    setPanel(prev => prev === p ? null : p)
-  }
+  // ── Keyboard: Escape cancels ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!screenshot) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        window.api.captureDone(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [screenshot])
+
+  // ── Mouse handlers ─────────────────────────────────────────────────────────
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return
+    setDrag({ startX: e.clientX, startY: e.clientY })
+    setRect(null)
+  }, [])
+
+  const onMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!drag) return
+      const x = Math.min(drag.startX, e.clientX)
+      const y = Math.min(drag.startY, e.clientY)
+      const w = Math.abs(e.clientX - drag.startX)
+      const h = Math.abs(e.clientY - drag.startY)
+      setRect({ x, y, w, h })
+    },
+    [drag],
+  )
+
+  const onMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      if (!drag) return
+      const x = Math.min(drag.startX, e.clientX)
+      const y = Math.min(drag.startY, e.clientY)
+      const w = Math.abs(e.clientX - drag.startX)
+      const h = Math.abs(e.clientY - drag.startY)
+      setDrag(null)
+      // Require a minimum selection size to avoid accidental clicks
+      if (w < 8 || h < 8) {
+        window.api.captureDone(null)
+        return
+      }
+      window.api.captureDone({ x, y, w, h })
+    },
+    [drag],
+  )
+
+  // Not in capture mode — render nothing (transparent passthrough)
+  if (!screenshot) return null
 
   return (
-    <>
-      {/* ── Full-screen panel overlays (history / settings) ──────────── */}
-      <AnimatePresence>
-        {panel !== null && (
-          <motion.div
-            key="panel-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setPanel(null)}
+    <div
+      ref={containerRef}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        cursor: 'crosshair',
+        userSelect: 'none',
+        // Fallback background if screenshot is blank — still shows capture mode is active
+        background: '#0a0a0a',
+      }}
+    >
+      {/* ── Frozen screenshot ──────────────────────────────────────── */}
+      <img
+        src={screenshot}
+        draggable={false}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          display: 'block',
+        }}
+      />
+
+      {/* ── Dark vignette ──────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(0,0,0,0.45)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* ── Pulsing border — unmistakable signal that capture is active */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          border: '3px solid #6c63ff',
+          borderRadius: 0,
+          pointerEvents: 'none',
+          animation: 'capture-pulse 1.4s ease-in-out infinite',
+        }}
+      />
+
+      {/* ── Instruction hint ───────────────────────────────────────── */}
+      {!drag && !rect && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(0,0,0,0.82)',
+            border: '1px solid rgba(108,99,255,0.5)',
+            borderRadius: 10,
+            padding: '10px 20px',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            boxShadow: '0 4px 24px rgba(108,99,255,0.3)',
+          }}
+        >
+          ✦ Drag to select a region &nbsp;·&nbsp;
+          <span style={{ color: '#888', fontWeight: 400 }}>
+            Esc to cancel{shortcutKey ? ` · ${shortcutKey}` : ''}
+          </span>
+        </div>
+      )}
+
+      {/* ── Selection rectangle ────────────────────────────────────── */}
+      {rect && rect.w > 0 && rect.h > 0 && (
+        <>
+          {/* Cut-out: reveal the screenshot through the dark veil */}
+          <div
             style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.01)',
-              zIndex: 10,
+              position: 'absolute',
+              left: rect.x,
+              top: rect.y,
+              width: rect.w,
+              height: rect.h,
+              background: 'transparent',
+              boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+              pointerEvents: 'none',
             }}
           />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {panel !== null && (
-          <motion.div
-            key={`panel-${panel}`}
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0, transition: { duration: 0.25, ease } }}
-            exit={{ opacity: 0, scale: 0.95, y: 8, transition: { duration: 0.18 } }}
+          {/* Border */}
+          <div
             style={{
-              position: 'fixed',
-              bottom: 212,
-              right: 16,
-              width: 280,
-              height: 360,
-              borderRadius: 20,
-              background: '#161616',
-              border: '1px solid rgba(255,255,255,0.1)',
-              boxShadow: '0 24px 60px rgba(0,0,0,0.7)',
-              zIndex: 20,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              WebkitAppRegion: 'no-drag',
-            } as React.CSSProperties}
-          >
-            <i
-              className={panel === 'history' ? 'ri-history-line' : 'ri-settings-3-line'}
-              style={{ fontSize: 32, color: 'rgba(255,255,255,0.15)' }}
-            />
-            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.25)', fontWeight: 500 }}>
-              {panel === 'history' ? 'History' : 'Settings'} coming soon
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Widget root — bottom-right, stacks vertically ────────────── */}
-      <div
-        onMouseEnter={() => { setHovered(true); window.api.overlayMouseActive(true) }}
-        onMouseLeave={() => { setHovered(false); window.api.overlayMouseActive(false) }}
-        style={{
-          position: 'fixed',
-          bottom: 16,
-          right: 16,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-end',
-          gap: 8,
-          zIndex: 30,
-        }}
-      >
-        {/* ── Controls pill (history + settings) — reveals on hover ──── */}
-        <AnimatePresence>
-          {hovered && (
-            <motion.div
-              key="controls-pill"
-              initial={{ opacity: 0, y: 12, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.28, ease } }}
-              exit={{ opacity: 0, y: 8, scale: 0.92, transition: { duration: 0.18 } }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                borderRadius: 999,
-                background: '#1c1c1c',
-                border: '1px solid rgba(255,255,255,0.09)',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.55)',
-                overflow: 'hidden',
-                WebkitAppRegion: 'no-drag',
-              } as React.CSSProperties}
-            >
-              <button
-                onClick={() => openPanel('history')}
-                style={iconBtnStyle}
-                title="History"
-              >
-                <i className="ri-history-line" style={{ fontSize: 19, color: panel === 'history' ? '#fff' : '#888' }} />
-              </button>
-              <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.1)', flexShrink: 0 }} />
-              <button
-                onClick={() => openPanel('settings')}
-                style={iconBtnStyle}
-                title="Settings"
-              >
-                <i className="ri-settings-3-line" style={{ fontSize: 19, color: panel === 'settings' ? '#fff' : '#888' }} />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── HoverAi tray — reveals on hover ──────────────────────── */}
-        <AnimatePresence>
-          {hovered && (
-            <motion.div
-              key="tray-pill"
-              initial={{ opacity: 0, y: 10, scale: 0.92 }}
-              animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.28, delay: 0.04, ease } }}
-              exit={{ opacity: 0, y: 8, scale: 0.92, transition: { duration: 0.16 } }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                padding: '10px 16px 10px 16px',
-                borderRadius: 999,
-                background: '#1c1c1c',
-                border: '1px solid rgba(255,255,255,0.09)',
-                boxShadow: '0 8px 32px rgba(108,99,255,0.35), 0 2px 8px rgba(0,0,0,0.5)',
-                WebkitAppRegion: 'drag',
-                userSelect: 'none',
-                minWidth: 160,
-              } as React.CSSProperties}
-            >
-              {/* Branding + status */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, WebkitAppRegion: 'drag' } as React.CSSProperties}>
-                <span style={{ fontWeight: 700, fontSize: 15, color: '#fff', letterSpacing: '-0.01em', lineHeight: 1 }}>
-                  HoverAi
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {/* Pulsing green dot */}
-                  <span style={{ position: 'relative', width: 7, height: 7, flexShrink: 0, display: 'inline-block' }}>
-                    <span style={{
-                      position: 'absolute', inset: 0, borderRadius: '50%',
-                      background: '#22c55e',
-                      animation: 'pulse-ring 2s ease-out infinite',
-                    }} />
-                    <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#22c55e' }} />
-                  </span>
-                  <span style={{ fontSize: 12, color: '#777', fontWeight: 500 }}>Guiding you</span>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Mic button — always visible, press-hold to drag ──────── */}
-        <motion.button
-          onClick={() => { if (!dragging) setMicActive(v => !v) }}
-          onMouseDown={onMicMouseDown}
-          whileHover={{ scale: dragging ? 1 : 1.08 }}
-          whileTap={{ scale: dragging ? 1 : 0.93 }}
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: '50%',
-            border: 'none',
-            cursor: dragging ? 'grabbing' : 'grab',
-            background: '#6c63ff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            boxShadow: micActive
-              ? '0 0 0 5px rgba(108,99,255,0.25), 0 0 0 10px rgba(108,99,255,0.1), 0 8px 24px rgba(108,99,255,0.6)'
-              : '0 0 0 1px rgba(255,255,255,0.08), 0 8px 24px rgba(108,99,255,0.45)',
-            transition: 'box-shadow 0.25s',
-            WebkitAppRegion: 'no-drag',
-          } as React.CSSProperties}
-        >
-          <i
-            className={micActive ? 'ri-mic-fill' : 'ri-mic-line'}
-            style={{ fontSize: 22, color: '#fff', pointerEvents: 'none' }}
+              position: 'absolute',
+              left: rect.x,
+              top: rect.y,
+              width: rect.w,
+              height: rect.h,
+              border: '2px solid #6c63ff',
+              borderRadius: 2,
+              boxShadow: '0 0 0 1px rgba(108,99,255,0.4)',
+              pointerEvents: 'none',
+            }}
           />
-        </motion.button>
-      </div>
-
+          {/* Size label */}
+          <div
+            style={{
+              position: 'absolute',
+              left: rect.x,
+              top: rect.y + rect.h + 6,
+              background: '#6c63ff',
+              borderRadius: 4,
+              padding: '2px 7px',
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#fff',
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {Math.round(rect.w)} × {Math.round(rect.h)}
+          </div>
+        </>
+      )}
       <style>{`
-        @keyframes pulse-ring {
-          0%   { transform: scale(1);   opacity: 1; }
-          70%  { transform: scale(2.4); opacity: 0; }
-          100% { transform: scale(2.4); opacity: 0; }
+        @keyframes capture-pulse {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.35; }
         }
       `}</style>
-    </>
+    </div>
   )
 }
-
-const iconBtnStyle: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  cursor: 'pointer',
-  padding: '10px 14px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  WebkitAppRegion: 'no-drag',
-} as React.CSSProperties

@@ -7,6 +7,9 @@ export default defineConfig({
   main: {},
   preload: {},
   renderer: {
+    server: {
+      allowedHosts: 'incremental-judgemental-duncan.ngrok-free.dev',
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src')
