@@ -1,5 +1,6 @@
 import { contextBridge, shell, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { CaptureDonePayload, QueryResult } from './index.d'
 
 // Custom APIs for renderer
 const api = {
@@ -17,7 +18,13 @@ const api = {
   closeSettingsWindow: () => ipcRenderer.send('close-settings-window'),
   signOut: () => ipcRenderer.send('sign-out'),
 
-  // Screen capture
+  // ── Token storage (delegates to safeStorage in main process) ───────────────
+  storeTokens: (access: string, refresh: string): Promise<void> =>
+    ipcRenderer.invoke('store-tokens', access, refresh),
+  getAccessToken: (): Promise<string | null> => ipcRenderer.invoke('get-access-token'),
+  clearTokens: (): Promise<void> => ipcRenderer.invoke('clear-tokens'),
+
+  // ── Screen capture ──────────────────────────────────────────────────────────
   onCaptureStart: (cb: (screenshotDataUrl: string, shortcutKey: string) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, dataUrl: string, shortcutKey: string) =>
       cb(dataUrl, shortcutKey)
@@ -29,8 +36,19 @@ const api = {
     ipcRenderer.on('capture-end', handler)
     return () => ipcRenderer.off('capture-end', handler)
   },
-  captureDone: (result: { x: number; y: number; w: number; h: number } | null) =>
-    ipcRenderer.send('capture-done', result),
+  captureDone: (result: CaptureDonePayload) => ipcRenderer.send('capture-done', result),
+
+  // ── Query pipeline push results ─────────────────────────────────────────────
+  onQueryResult: (cb: (result: QueryResult) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, result: QueryResult) => cb(result)
+    ipcRenderer.on('query-result', handler)
+    return () => ipcRenderer.off('query-result', handler)
+  },
+  onQueryError: (cb: (message: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, message: string) => cb(message)
+    ipcRenderer.on('query-error', handler)
+    return () => ipcRenderer.off('query-error', handler)
+  },
 }
 
 if (process.contextIsolated) {

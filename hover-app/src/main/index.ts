@@ -11,10 +11,18 @@ import {
   nativeImage,
   globalShortcut,
   desktopCapturer,
+  safeStorage,
 } from 'electron'
 import { join } from 'path'
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+
+// ─── Config ───────────────────────────────────────────────────────────────────
+// VITE_API_BASE is injected by electron-vite's define at build time (from .env).
+// Falls back to localhost so the app still works without a .env file in dev.
+const API_BASE: string =
+  (typeof import.meta !== 'undefined' && (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE) ||
+  'http://localhost:8000/api/v1'
 
 // ─── Settings store ───────────────────────────────────────────────────────────
 
@@ -28,6 +36,7 @@ export type AppSettings = {
   notifications: boolean
   language: string
   wakeWordEnabled: boolean
+  voiceGender: 'female' | 'male'
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -40,10 +49,65 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifications: true,
   language: 'en-pidgin',
   wakeWordEnabled: false,
+  voiceGender: 'female',
 }
 
 function getSettingsPath(): string {
   return join(app.getPath('userData'), 'settings.json')
+}
+
+// ─── Token store (safeStorage) ────────────────────────────────────────────────
+
+function getTokensPath(): string {
+  return join(app.getPath('userData'), 'tokens.json')
+}
+
+function storeTokens(access: string, refresh: string): void {
+  if (!safeStorage.isEncryptionAvailable()) {
+    // Fallback: store plain (dev machines without keychain support)
+    writeFileSync(getTokensPath(), JSON.stringify({ access, refresh }), 'utf-8')
+    return
+  }
+  const payload = JSON.stringify({
+    access: safeStorage.encryptString(access).toString('base64'),
+    refresh: safeStorage.encryptString(refresh).toString('base64'),
+    encrypted: true,
+  })
+  writeFileSync(getTokensPath(), payload, 'utf-8')
+}
+
+function getStoredTokens(): { access: string; refresh: string } | null {
+  try {
+    const raw = readFileSync(getTokensPath(), 'utf-8')
+    const parsed = JSON.parse(raw) as { access: string; refresh: string; encrypted?: boolean }
+    if (parsed.encrypted && safeStorage.isEncryptionAvailable()) {
+      return {
+        access: safeStorage.decryptString(Buffer.from(parsed.access, 'base64')),
+        refresh: safeStorage.decryptString(Buffer.from(parsed.refresh, 'base64')),
+      }
+    }
+    return { access: parsed.access, refresh: parsed.refresh }
+  } catch {
+    return null
+  }
+}
+
+function clearTokens(): void {
+  try { unlinkSync(getTokensPath()) } catch { /* already gone */ }
+}
+
+/**
+ * Decode the `exp` claim from a JWT without verifying the signature.
+ * Used only to check if the access token is still fresh enough to skip re-auth.
+ */
+function jwtExpiry(token: string): number {
+  try {
+    const payload = token.split('.')[1]
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8')) as { exp?: number }
+    return decoded.exp ?? 0
+  } catch {
+    return 0
+  }
 }
 
 function loadSettings(): AppSettings {
@@ -165,6 +229,7 @@ function createTray(_onOpenOverlay: () => void, onQuit: () => void): void {
 
 let overlayWindow: BrowserWindow | null = null
 let overlayReady = false   // true once the renderer has finished loading
+let lastScreenshot = ''    // dataUrl of the most recent screenshot sent to overlay
 
 function getOrCreateOverlayWindow(): BrowserWindow {
   if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow
@@ -256,6 +321,7 @@ async function triggerCapture(): Promise<void> {
   }
 
   const dataUrl = source.thumbnail.toDataURL()
+  lastScreenshot = dataUrl
   console.log('[capture] screenshot dataUrl length:', dataUrl.length)
 
   const win = getOrCreateOverlayWindow()
@@ -278,6 +344,136 @@ async function triggerCapture(): Promise<void> {
   } else {
     console.log('[capture] waiting for renderer to be ready...')
     win.webContents.once('did-finish-load', sendCapture)
+  }
+}
+
+// ─── Query pipeline ───────────────────────────────────────────────────────────
+
+async function refreshAccessToken(): Promise<string | null> {
+  const tokens = getStoredTokens()
+  if (!tokens?.refresh) return null
+  try {
+    const resp = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: tokens.refresh }),
+    })
+    if (!resp.ok) {
+      clearTokens()
+      return null
+    }
+    const data = await resp.json() as { access_token: string; refresh_token: string }
+    storeTokens(data.access_token, data.refresh_token)
+    return data.access_token
+  } catch {
+    return null
+  }
+}
+
+async function fetchWithAuth(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let token = getStoredTokens()?.access ?? null
+  let resp = await fetch(url, {
+    ...init,
+    headers: { ...init.headers as Record<string, string>, Authorization: `Bearer ${token}` },
+  })
+  if (resp.status === 401) {
+    token = await refreshAccessToken()
+    if (!token) return resp  // caller handles unauthenticated
+    resp = await fetch(url, {
+      ...init,
+      headers: { ...init.headers as Record<string, string>, Authorization: `Bearer ${token}` },
+    })
+  }
+  return resp
+}
+
+async function runQueryPipeline(
+  region: { x: number; y: number; w: number; h: number },
+  audioData: number[],
+  screenshotDataUrl: string,
+): Promise<void> {
+  console.log('[query] starting pipeline, region:', region)
+
+  if (!overlayWindow || overlayWindow.isDestroyed()) return
+
+  // Crop screenshot to the selected region using nativeImage
+  const fullImage = nativeImage.createFromDataURL(screenshotDataUrl)
+  const { width: imgW, height: imgH } = fullImage.getSize()
+  const cropRect = {
+    x: Math.round(region.x),
+    y: Math.round(region.y),
+    width: Math.max(1, Math.round(region.w)),
+    height: Math.max(1, Math.round(region.h)),
+  }
+  // Clamp to image bounds
+  cropRect.x = Math.min(cropRect.x, imgW - 1)
+  cropRect.y = Math.min(cropRect.y, imgH - 1)
+  cropRect.width = Math.min(cropRect.width, imgW - cropRect.x)
+  cropRect.height = Math.min(cropRect.height, imgH - cropRect.y)
+
+  const cropped = fullImage.crop(cropRect)
+  const screenshotB64 = cropped.toPNG().toString('base64')
+
+  const audioBuffer = Buffer.from(audioData)
+  const language = loadSettings().language
+
+  // Build multipart form
+  const boundary = `----HoverAIBoundary${Date.now()}`
+  const crlf = '\r\n'
+  const parts: Buffer[] = []
+
+  // audio field
+  parts.push(
+    Buffer.from(
+      `--${boundary}${crlf}` +
+        `Content-Disposition: form-data; name="audio"; filename="audio.webm"${crlf}` +
+        `Content-Type: audio/webm${crlf}${crlf}`,
+    ),
+  )
+  parts.push(audioBuffer)
+  parts.push(Buffer.from(crlf))
+
+  // screenshot field
+  const screenshotStr = `--${boundary}${crlf}Content-Disposition: form-data; name="screenshot"${crlf}${crlf}${screenshotB64}${crlf}`
+  parts.push(Buffer.from(screenshotStr))
+
+  // language field
+  const langStr = `--${boundary}${crlf}Content-Disposition: form-data; name="language"${crlf}${crlf}${language}${crlf}`
+  parts.push(Buffer.from(langStr))
+
+  // closing boundary
+  parts.push(Buffer.from(`--${boundary}--${crlf}`))
+
+  const body = Buffer.concat(parts)
+
+  try {
+    const resp = await fetchWithAuth(`${API_BASE}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      body,
+    })
+
+    if (!resp.ok) {
+      const errorBody = await resp.text().catch(() => `HTTP ${resp.status}`)
+      console.error('[query] API error:', errorBody)
+      overlayWindow?.webContents.send('query-error', `Query failed: ${errorBody}`)
+      return
+    }
+
+    const result = await resp.json() as {
+      transcript: string
+      steps: { step: number; instruction: string; x: number; y: number; w: number; h: number }[]
+      summary: string
+      speech_b64: string
+    }
+    console.log('[query] success, steps:', result.steps.length)
+    overlayWindow?.webContents.send('query-result', result)
+  } catch (err) {
+    console.error('[query] fetch error:', err)
+    overlayWindow?.webContents.send('query-error', 'Network error — check that the backend is running.')
   }
 }
 
@@ -358,14 +554,20 @@ ipcMain.on('launch-overlay', () => {
   createTray(() => { /* no-op: overlay has no persistent visible state */ }, () => app.quit())
 })
 
-// Renderer signals capture is done (selection made or cancelled)
-ipcMain.on('capture-done', (_event, result: { x: number; y: number; w: number; h: number } | null) => {
-  endCapture()
-  if (result) {
-    // TODO: pass the selected region to AI processing
-    console.log('[capture] region selected:', result)
-  }
-})
+// Renderer signals capture is done — runs the full query pipeline
+ipcMain.on(
+  'capture-done',
+  (
+    _event,
+    payload: { region: { x: number; y: number; w: number; h: number }; audioData: number[] } | null,
+  ) => {
+    endCapture()
+    if (!payload) return
+
+    // Capture the screenshot dataUrl that was sent to the overlay (stored as lastScreenshot)
+    runQueryPipeline(payload.region, payload.audioData, lastScreenshot).catch(console.error)
+  },
+)
 
 ipcMain.on('close-main-window', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -425,7 +627,20 @@ ipcMain.on('close-settings-window', (event) => {
   win?.close()
 })
 
-ipcMain.on('sign-out', () => {
+ipcMain.on('sign-out', async () => {
+  // Fire-and-forget: revoke refresh token server-side (don't block on network)
+  const tokens = getStoredTokens()
+  if (tokens?.refresh) {
+    fetch(`${API_BASE}/auth/signout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: tokens.refresh }),
+    }).catch(() => { /* ignore network failures on sign-out */ })
+  }
+
+  // Always clear local tokens immediately
+  clearTokens()
+
   // Close settings window
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     settingsWindow.close()
@@ -455,6 +670,21 @@ ipcMain.handle('register-shortcut-from-settings', (_event, key: string): boolean
   return ok
 })
 
+// ─── Token storage IPC ────────────────────────────────────────────────────────
+
+ipcMain.handle('store-tokens', (_event, access: string, refresh: string): void => {
+  storeTokens(access, refresh)
+})
+
+ipcMain.handle('get-access-token', (): string | null => {
+  const tokens = getStoredTokens()
+  return tokens?.access ?? null
+})
+
+ipcMain.handle('clear-tokens', (): void => {
+  clearTokens()
+})
+
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
@@ -463,14 +693,43 @@ app.whenReady().then(() => {
   })
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.hoverai')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  createWindow()
+  // ── Validate token against the server before skipping onboarding ─────────
+  // A locally non-expired JWT may still be invalid (e.g. DB was wiped).
+  // Always probe GET /users/me — if it 401s or errors, clear tokens and show onboarding.
+  const tokens = getStoredTokens()
+  const nowSec = Math.floor(Date.now() / 1000)
+  const tokenPresent = tokens !== null && jwtExpiry(tokens.access) > nowSec + 60
+
+  let skipOnboarding = false
+  if (tokenPresent) {
+    try {
+      const resp = await fetchWithAuth(`${API_BASE}/users/me`, { method: 'GET' })
+      if (resp.ok) {
+        console.log('[auth] server confirmed valid token — skipping onboarding')
+        skipOnboarding = true
+      } else {
+        console.log(`[auth] server rejected token (${resp.status}) — clearing and showing onboarding`)
+        clearTokens()
+      }
+    } catch (err) {
+      console.log('[auth] could not reach server to validate token — showing onboarding', err)
+      clearTokens()
+    }
+  }
+
+  if (skipOnboarding) {
+    getOrCreateOverlayWindow()
+    createTray(() => {}, () => app.quit())
+  } else {
+    createWindow()
+  }
 
   app.on('activate', function () {
     // On macOS re-open the onboarding window if all windows are closed

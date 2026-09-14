@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import type { AppSettings } from '@renderer/../../src/preload/index.d'
 import LangDropdown from '@renderer/components/LangDropdown'
+import { api, ApiError } from '@renderer/lib/api'
+import type { UserResponse } from '@renderer/lib/api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,7 @@ function displayShortcut(acc: string): string {
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [user, setUser] = useState<UserResponse | null>(null)
   const [langOpen, setLangOpen] = useState(false)
   const [shortcutMode, setShortcutMode] = useState(false)
   const [shortcutCombo, setShortcutCombo] = useState('')
@@ -50,14 +53,35 @@ export default function SettingsPage() {
   >('idle')
   const testingRef = useRef(false)
 
-  // Load settings + active shortcut on mount
+  // Load local settings + active shortcut + server user/settings on mount
   useEffect(() => {
-    Promise.all([window.api.getSettings(), window.api.getActiveShortcut()]).then(
-      ([s, shortcut]) => {
-        setSettings(s)
-        if (shortcut) setShortcutCombo(displayShortcut(shortcut))
+    Promise.all([
+      window.api.getSettings(),
+      window.api.getActiveShortcut(),
+      api.getMe().catch(() => null),
+      api.getServerSettings().catch(() => null),
+    ]).then(([localSettings, shortcut, serverUser, serverSettings]) => {
+      // Merge server settings into local (server is source of truth for synced fields)
+      const merged: AppSettings = {
+        ...localSettings,
+        ...(serverSettings
+          ? {
+              overlayOpacity: serverSettings.overlay_opacity,
+              overlaySize: serverSettings.overlay_size,
+              micSensitivity: serverSettings.mic_sensitivity,
+              soundEffects: serverSettings.sound_effects,
+              notifications: serverSettings.notifications,
+              wakeWordEnabled: serverSettings.wake_word_enabled,
+              launchAtLogin: serverSettings.launch_at_login,
+              showInTaskbar: serverSettings.show_in_taskbar,
+              voiceGender: serverSettings.voice_gender,
+            }
+          : {}),
       }
-    )
+      setSettings(merged)
+      if (shortcut) setShortcutCombo(displayShortcut(shortcut))
+      if (serverUser) setUser(serverUser)
+    })
   }, [])
 
   // Keyboard listener for shortcut recording
@@ -90,7 +114,26 @@ export default function SettingsPage() {
       if (!settings) return
       const next = { ...settings, [key]: value }
       setSettings(next)
+      // Persist locally
       window.api.saveSettings(next)
+      // Map camelCase key to snake_case server field and sync (fire and forget)
+      const keyToServerField: Partial<Record<keyof AppSettings, string>> = {
+        overlayOpacity: 'overlay_opacity',
+        overlaySize: 'overlay_size',
+        micSensitivity: 'mic_sensitivity',
+        soundEffects: 'sound_effects',
+        notifications: 'notifications',
+        wakeWordEnabled: 'wake_word_enabled',
+        launchAtLogin: 'launch_at_login',
+        showInTaskbar: 'show_in_taskbar',
+        voiceGender: 'voice_gender',
+      }
+      const serverField = keyToServerField[key]
+      if (serverField) {
+        api.patchServerSettings({ [serverField]: value }).catch((err) => {
+          if (!(err instanceof ApiError)) console.error('[settings] server sync failed:', err)
+        })
+      }
     },
     [settings]
   )
@@ -304,25 +347,71 @@ export default function SettingsPage() {
           </div>
         </Card>
 
+        {/* ── Voice gender ─────────────────────────────────────────────── */}
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                AI voice
+              </p>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 3 }}>
+                Voice used for spoken responses
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['female', 'male'] as const).map((gender) => (
+                <button
+                  key={gender}
+                  onClick={() => update('voiceGender', gender)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-full)',
+                    border: settings.voiceGender === gender
+                      ? '1px solid var(--accent)'
+                      : '1px solid rgba(255,255,255,0.12)',
+                    background: settings.voiceGender === gender
+                      ? 'rgba(108,99,255,0.18)'
+                      : 'rgba(255,255,255,0.04)',
+                    color: settings.voiceGender === gender
+                      ? 'var(--text-primary)'
+                      : 'var(--text-secondary)',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {gender}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Card>
+
         {/* ── Account ─────────────────────────────────────────────────── */}
         <SectionLabel icon="ri-user-3-line">Account</SectionLabel>
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            {/* Avatar */}
+            {/* Avatar — initials from name */}
             <div
               style={{
                 width: 44,
                 height: 44,
                 borderRadius: '50%',
-                background: 'linear-gradient(135deg, #f59e0b 0%, #8b5cf6 100%)',
+                background: 'linear-gradient(135deg, #6c63ff 0%, #8b5cf6 100%)',
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 20,
+                fontSize: 16,
+                fontWeight: 700,
+                color: '#fff',
               }}
             >
-              🧑‍🎨
+              {user?.full_name
+                ? user.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                : '?'}
             </div>
 
             {/* Info */}
@@ -337,10 +426,10 @@ export default function SettingsPage() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                amara@studio.com
+                {user?.full_name ?? user?.email ?? '—'}
               </p>
               <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
-                Free plan
+                {user?.email ?? 'Loading…'}
               </p>
             </div>
 
