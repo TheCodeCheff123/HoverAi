@@ -25,3 +25,7 @@ dist-ssr
 .bob/
 AGENTS.md
 dump.txt
+__pycache__
+.venv
+.pytest_cache
+.env

@@ -1,0 +1,75 @@
+services:
+  - type: web
+    name: hover-ai-backend
+    runtime: python
+    region: oregon
+    plan: free
+
+    # ── Build ──────────────────────────────────────────────────────────────────
+    # Install ffmpeg (required by pydub for audio format conversion), then
+    # install Python dependencies with uv into the default virtualenv location.
+    buildCommand: |
+      apt-get install -y ffmpeg &&
+      pip install uv &&
+      uv sync --frozen
+
+    # ── Start ─────────────────────────────────────────────────────────────────
+    startCommand: uv run hover
+
+    # ── Health check ──────────────────────────────────────────────────────────
+    healthCheckPath: /api/v1/health
+
+    # ── Environment variables ─────────────────────────────────────────────────
+    # Set these in the Render dashboard → Environment tab.
+    # Do NOT commit real values here — this file is version-controlled.
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # set manually in dashboard
+
+      - key: JWT_SECRET
+        generateValue: true  # Render generates a secure random value
+
+      - key: JWT_ALGORITHM
+        value: HS256
+
+      - key: JWT_EXPIRE_MINUTES
+        value: "15"
+
+      - key: JWT_REFRESH_EXPIRE_DAYS
+        value: "90"
+
+      - key: INTRON_API_KEY
+        sync: false
+
+      - key: INTRON_STT_BASE_URL
+        value: https://infer.voice.intron.io
+
+      - key: SAHARA_POLL_INTERVAL_S
+        value: "1.0"
+
+      - key: SAHARA_POLL_TIMEOUT_S
+        value: "60.0"
+
+      - key: GROQ_API_KEY
+        sync: false
+
+      - key: HF_API_KEY
+        sync: false
+
+      - key: VISION_MODEL
+        value: qwen/qwen3.8-27b
+
+      - key: WHISPER_MODEL
+        value: whisper-large-v3
+
+      - key: HF_ASR_MODEL
+        value: openai/whisper-large-v3
+
+      - key: TTS_MODEL
+        value: canopylabs/orpheus-v1-english
+
+      - key: TTS_VOICE
+        value: autumn
+
+      - key: TTS_ENABLED
+        value: "true"

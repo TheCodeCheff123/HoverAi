@@ -1,0 +1,101 @@
+"""Text-to-speech service — converts LLM summary text to spoken audio.
+
+Uses Groq's Orpheus v1 English TTS model (canopylabs/orpheus-v1-english)
+via the OpenAI-compatible speech endpoint. Returns raw WAV bytes which the
+caller base64-encodes and sends to Electron for playback.
+
+Orpheus is a high-quality neural TTS model that runs on Groq's infrastructure.
+It supports six voices and outputs WAV format only.
+"""
+
+import base64
+import logging
+import time
+
+from openai import AsyncOpenAI
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Groq OpenAI-compatible client for TTS (shared, thread-safe)
+_groq_tts_client = AsyncOpenAI(
+    api_key=settings.groq_api_key,
+    base_url="https://api.groq.com/openai/v1",
+)
+
+# Valid voices for canopylabs/orpheus-v1-english (confirmed from API error response)
+ORPHEUS_VOICES = ("autumn", "diana", "hannah", "austin", "daniel", "troy")
+
+
+class TTSError(Exception):
+    """Raised when the TTS API call fails.
+
+    Attributes:
+        message: Human-readable description of what went wrong.
+    """
+
+    def __init__(self, message: str) -> None:
+        """Initialise with a descriptive error message.
+
+        Args:
+            message: Description of the TTS failure.
+        """
+        super().__init__(message)
+        self.message = message
+
+
+async def synthesise(text: str, voice: str | None = None) -> tuple[str, int]:
+    """Convert text to speech using Groq Orpheus and return base64 WAV.
+
+    Calls ``canopylabs/orpheus-v1-english`` with the resolved Orpheus voice
+    name. The caller should resolve the user's ``voice_gender`` preference to
+    a concrete voice name via ``VOICE_GENDER_MAP`` before calling this function.
+    Falls back to ``settings.tts_voice`` if no voice is supplied.
+
+    The response is raw WAV bytes which are base64-encoded for safe embedding
+    in a JSON response body. The caller attaches the result to
+    ``QueryResponse.speech_b64`` so Electron can decode and play it without a
+    second round-trip.
+
+    Args:
+        text: The text to synthesise — typically the LLM ``summary`` string
+              from the vision pipeline (≤ ~200 chars for best latency).
+        voice: Concrete Orpheus voice name (e.g. ``"autumn"``, ``"daniel"``).
+               Defaults to ``settings.tts_voice`` when ``None``.
+
+    Returns:
+        A tuple of ``(speech_b64, elapsed_ms)`` where ``speech_b64`` is a
+        base64-encoded WAV string and ``elapsed_ms`` is the round-trip time.
+        Returns ``("", elapsed_ms)`` on any failure so the query route can
+        still return beacon steps even if TTS fails.
+
+    Raises:
+        Does not raise — all exceptions are caught and logged. The empty
+        string sentinel lets the caller degrade gracefully.
+    """
+    start = time.monotonic()
+
+    if not text.strip():
+        logger.warning("TTS called with empty text — skipping")
+        return ("", 0)
+
+    resolved_voice = voice or settings.tts_voice
+
+    try:
+        response = await _groq_tts_client.audio.speech.create(
+            model=settings.tts_model,
+            voice=resolved_voice,  # type: ignore[arg-type]
+            input=text,
+            response_format="wav",  # only format supported by Orpheus on Groq
+        )
+        wav_bytes = response.content
+        speech_b64 = base64.b64encode(wav_bytes).decode()
+        elapsed = int((time.monotonic() - start) * 1000)
+        logger.info("TTS synthesis complete in %dms (%d bytes WAV)", elapsed, len(wav_bytes))
+        return (speech_b64, elapsed)
+
+    except Exception as exc:
+        elapsed = int((time.monotonic() - start) * 1000)
+        logger.error("TTS synthesis error: %s", exc, exc_info=True)
+        return ("", elapsed)
