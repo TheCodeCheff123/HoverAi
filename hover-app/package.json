@@ -23,6 +23,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@nut-tree-fork/nut-js": "^4.2.6",
     "@tailwindcss/vite": "^4.3.3",
     "framer-motion": "^13.2.0",
     "remixicon": "^4.9.1",

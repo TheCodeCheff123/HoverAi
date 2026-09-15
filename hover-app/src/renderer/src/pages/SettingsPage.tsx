@@ -64,6 +64,8 @@ export default function SettingsPage() {
       // Merge server settings into local (server is source of truth for synced fields)
       const merged: AppSettings = {
         ...localSettings,
+        // language lives on the User model, not UserSettings
+        ...(serverUser ? { language: serverUser.language } : {}),
         ...(serverSettings
           ? {
               overlayOpacity: serverSettings.overlay_opacity,
@@ -117,6 +119,13 @@ export default function SettingsPage() {
       // Persist locally
       window.api.saveSettings(next)
       // Map camelCase key to snake_case server field and sync (fire and forget)
+      // language lives on User model (PATCH /users/me), everything else on UserSettings
+      if (key === 'language') {
+        api.patchMe({ language: value as string }).catch((err) => {
+          if (!(err instanceof ApiError)) console.error('[settings] language sync failed:', err)
+        })
+        return
+      }
       const keyToServerField: Partial<Record<keyof AppSettings, string>> = {
         overlayOpacity: 'overlay_opacity',
         overlaySize: 'overlay_size',

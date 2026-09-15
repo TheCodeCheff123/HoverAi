@@ -16,6 +16,10 @@ import {
 import { join } from 'path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { mouse, keyboard, straightTo, Point, Button, Key } from '@nut-tree-fork/nut-js'
+
+// Speed up mouse movement — default is very slow
+mouse.config.mouseSpeed = 1500
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 // VITE_API_BASE is injected by electron-vite's define at build time (from .env).
@@ -37,6 +41,7 @@ export type AppSettings = {
   language: string
   wakeWordEnabled: boolean
   voiceGender: 'female' | 'male'
+  shortcutKey: string          // persisted accelerator e.g. "CommandOrControl+Shift+H"
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -50,6 +55,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   language: 'en-pidgin',
   wakeWordEnabled: false,
   voiceGender: 'female',
+  shortcutKey: '',
 }
 
 function getSettingsPath(): string {
@@ -390,90 +396,240 @@ async function fetchWithAuth(
   return resp
 }
 
-async function runQueryPipeline(
-  region: { x: number; y: number; w: number; h: number },
+// ─── Agent pipeline helpers ───────────────────────────────────────────────────
+
+/**
+ * Parse a key combo string like "Ctrl+S", "Win+D", "Alt+F4" into nut-js Key values.
+ * Falls back to an empty array if a token can't be resolved.
+ */
+function parseKeys(combo: string): Key[] {
+  const map: Record<string, Key> = {
+    ctrl: Key.LeftControl, control: Key.LeftControl,
+    shift: Key.LeftShift,
+    alt: Key.LeftAlt,
+    win: Key.LeftWin, windows: Key.LeftWin, super: Key.LeftSuper, cmd: Key.LeftCmd,
+    tab: Key.Tab, enter: Key.Return, return: Key.Return,
+    backspace: Key.Backspace, delete: Key.Delete, escape: Key.Escape, esc: Key.Escape,
+    space: Key.Space, home: Key.Home, end: Key.End,
+    pageup: Key.PageUp, pagedown: Key.PageDown,
+    up: Key.Up, down: Key.Down, left: Key.Left, right: Key.Right,
+    f1: Key.F1, f2: Key.F2, f3: Key.F3, f4: Key.F4,
+    f5: Key.F5, f6: Key.F6, f7: Key.F7, f8: Key.F8,
+    f9: Key.F9, f10: Key.F10, f11: Key.F11, f12: Key.F12,
+  }
+  return combo.split('+').map((token) => {
+    const t = token.trim().toLowerCase()
+    if (map[t]) return map[t]
+    const upper = token.trim().toUpperCase()
+    if (upper in Key) return Key[upper as keyof typeof Key]
+    const num = `Num${upper}`
+    if (num in Key) return Key[num as keyof typeof Key]
+    console.warn(`[agent] unknown key token: "${token}"`)
+    return null
+  }).filter((k): k is Key => k !== null)
+}
+
+
+type AgentAction = {
+  action: 'click' | 'double_click' | 'right_click' | 'type' | 'key' | 'scroll'
+  instruction: string
+  x: number; y: number; w: number; h: number
+  text?: string | null
+  keys?: string | null
+  direction?: 'up' | 'down' | null
+  amount?: number | null
+}
+
+type AgentResponse = {
+  session_id: string
+  action: AgentAction | null
+  summary: string
+  speech_b64: string
+  done: boolean
+  turn: number
+}
+
+/** Take a fresh screenshot of the display under the cursor and return base64 PNG */
+async function captureScreenshot(): Promise<string> {
+  const cursor = screen.getCursorScreenPoint()
+  const display = screen.getDisplayNearestPoint(cursor)
+  const { bounds, scaleFactor } = display
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: {
+      width: Math.round(bounds.width * scaleFactor),
+      height: Math.round(bounds.height * scaleFactor),
+    },
+  })
+  const source = sources.find((s) =>
+    sources.length === 1 || s.display_id === String(display.id)
+  ) ?? sources[0]
+  if (!source) throw new Error('no screen source found')
+  return source.thumbnail.toPNG().toString('base64')
+}
+
+async function runAgentPipeline(
   audioData: number[],
   screenshotDataUrl: string,
 ): Promise<void> {
-  console.log('[query] starting pipeline, region:', region)
-
+  console.log('[agent] starting pipeline')
   if (!overlayWindow || overlayWindow.isDestroyed()) return
 
-  // Crop screenshot to the selected region using nativeImage
-  const fullImage = nativeImage.createFromDataURL(screenshotDataUrl)
-  const { width: imgW, height: imgH } = fullImage.getSize()
-  const cropRect = {
-    x: Math.round(region.x),
-    y: Math.round(region.y),
-    width: Math.max(1, Math.round(region.w)),
-    height: Math.max(1, Math.round(region.h)),
-  }
-  // Clamp to image bounds
-  cropRect.x = Math.min(cropRect.x, imgW - 1)
-  cropRect.y = Math.min(cropRect.y, imgH - 1)
-  cropRect.width = Math.min(cropRect.width, imgW - cropRect.x)
-  cropRect.height = Math.min(cropRect.height, imgH - cropRect.y)
-
-  const cropped = fullImage.crop(cropRect)
-  const screenshotB64 = cropped.toPNG().toString('base64')
-
+  const screenshotB64 = nativeImage.createFromDataURL(screenshotDataUrl).toPNG().toString('base64')
   const audioBuffer = Buffer.from(audioData)
   const language = loadSettings().language
 
-  // Build multipart form
+  // ── Step 1: POST /agent/start with audio + screenshot + language ────────────
   const boundary = `----HoverAIBoundary${Date.now()}`
   const crlf = '\r\n'
   const parts: Buffer[] = []
 
-  // audio field
-  parts.push(
-    Buffer.from(
-      `--${boundary}${crlf}` +
-        `Content-Disposition: form-data; name="audio"; filename="audio.webm"${crlf}` +
-        `Content-Type: audio/webm${crlf}${crlf}`,
-    ),
-  )
+  parts.push(Buffer.from(
+    `--${boundary}${crlf}` +
+    `Content-Disposition: form-data; name="audio"; filename="audio.webm"${crlf}` +
+    `Content-Type: audio/webm${crlf}${crlf}`
+  ))
   parts.push(audioBuffer)
   parts.push(Buffer.from(crlf))
-
-  // screenshot field
-  const screenshotStr = `--${boundary}${crlf}Content-Disposition: form-data; name="screenshot"${crlf}${crlf}${screenshotB64}${crlf}`
-  parts.push(Buffer.from(screenshotStr))
-
-  // language field
-  const langStr = `--${boundary}${crlf}Content-Disposition: form-data; name="language"${crlf}${crlf}${language}${crlf}`
-  parts.push(Buffer.from(langStr))
-
-  // closing boundary
+  parts.push(Buffer.from(
+    `--${boundary}${crlf}Content-Disposition: form-data; name="screenshot"${crlf}${crlf}${screenshotB64}${crlf}`
+  ))
+  parts.push(Buffer.from(
+    `--${boundary}${crlf}Content-Disposition: form-data; name="language"${crlf}${crlf}${language}${crlf}`
+  ))
   parts.push(Buffer.from(`--${boundary}--${crlf}`))
 
-  const body = Buffer.concat(parts)
-
+  let agentResp: AgentResponse
   try {
-    const resp = await fetchWithAuth(`${API_BASE}/query`, {
+    const resp = await fetchWithAuth(`${API_BASE}/agent/start`, {
       method: 'POST',
       headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-      body,
+      body: Buffer.concat(parts),
     })
-
     if (!resp.ok) {
-      const errorBody = await resp.text().catch(() => `HTTP ${resp.status}`)
-      console.error('[query] API error:', errorBody)
-      overlayWindow?.webContents.send('query-error', `Query failed: ${errorBody}`)
+      const err = await resp.text().catch(() => `HTTP ${resp.status}`)
+      console.error('[agent] start error:', err)
+      overlayWindow?.webContents.send('agent-error', `Agent failed: ${err}`)
       return
     }
-
-    const result = await resp.json() as {
-      transcript: string
-      steps: { step: number; instruction: string; x: number; y: number; w: number; h: number }[]
-      summary: string
-      speech_b64: string
-    }
-    console.log('[query] success, steps:', result.steps.length)
-    overlayWindow?.webContents.send('query-result', result)
+    agentResp = await resp.json() as AgentResponse
   } catch (err) {
-    console.error('[query] fetch error:', err)
-    overlayWindow?.webContents.send('query-error', 'Network error — check that the backend is running.')
+    console.error('[agent] start fetch error:', err)
+    overlayWindow?.webContents.send('agent-error', 'Network error — check backend is running.')
+    return
+  }
+
+  // ── Agent loop ──────────────────────────────────────────────────────────────
+  while (true) {
+    console.log(`[agent] turn ${agentResp.turn}, done=${agentResp.done}, action=${agentResp.action?.action ?? 'none'}`)
+
+    if (agentResp.done || !agentResp.action) {
+      // All done — send final response and break
+      overlayWindow?.webContents.send('agent-done', agentResp)
+      break
+    }
+
+    // Push this turn's action to the overlay so it can show the beacon
+    overlayWindow?.webContents.send('agent-turn', agentResp)
+
+    // Execute the action
+    let actionResult: 'success' | 'error' = 'success'
+    try {
+      await executeAction(agentResp.action)
+    } catch (err) {
+      console.error(`[agent] action failed:`, err)
+      actionResult = 'error'
+    }
+
+    // Wait 600ms for the OS to process the action
+    await new Promise<void>((r) => setTimeout(r, 600))
+
+    // Take a fresh screenshot to show the backend what changed
+    let newScreenshotB64: string
+    try {
+      newScreenshotB64 = await captureScreenshot()
+    } catch (err) {
+      console.error('[agent] screenshot failed:', err)
+      newScreenshotB64 = screenshotB64 // fallback to original
+    }
+
+    // POST /agent/turn — must be multipart/form-data, same as /agent/start
+    try {
+      const turnBoundary = `----HoverAIBoundary${Date.now()}`
+      const turnCrlf = '\r\n'
+      const turnParts: Buffer[] = []
+
+      turnParts.push(Buffer.from(
+        `--${turnBoundary}${turnCrlf}` +
+        `Content-Disposition: form-data; name="session_id"${turnCrlf}${turnCrlf}` +
+        `${agentResp.session_id}${turnCrlf}`
+      ))
+      turnParts.push(Buffer.from(
+        `--${turnBoundary}${turnCrlf}` +
+        `Content-Disposition: form-data; name="screenshot"${turnCrlf}${turnCrlf}` +
+        `${newScreenshotB64}${turnCrlf}`
+      ))
+      turnParts.push(Buffer.from(
+        `--${turnBoundary}${turnCrlf}` +
+        `Content-Disposition: form-data; name="action_result"${turnCrlf}${turnCrlf}` +
+        `${actionResult}${turnCrlf}`
+      ))
+      turnParts.push(Buffer.from(`--${turnBoundary}--${turnCrlf}`))
+
+      const resp = await fetchWithAuth(`${API_BASE}/agent/turn`, {
+        method: 'POST',
+        headers: { 'Content-Type': `multipart/form-data; boundary=${turnBoundary}` },
+        body: Buffer.concat(turnParts),
+      })
+      if (!resp.ok) {
+        const err = await resp.text().catch(() => `HTTP ${resp.status}`)
+        console.error('[agent] turn error:', err)
+        overlayWindow?.webContents.send('agent-error', `Agent turn failed: ${err}`)
+        return
+      }
+      agentResp = await resp.json() as AgentResponse
+    } catch (err) {
+      console.error('[agent] turn fetch error:', err)
+      overlayWindow?.webContents.send('agent-error', 'Network error on agent turn.')
+      return
+    }
+  }
+}
+
+/** Execute a single AgentAction using nut-js */
+async function executeAction(action: AgentAction): Promise<void> {
+  const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  const absX = Math.round(action.x * bounds.width) + bounds.x
+  const absY = Math.round(action.y * bounds.height) + bounds.y
+
+  console.log(`[agent] executing ${action.action} at (${absX}, ${absY})`)
+
+  switch (action.action) {
+    case 'click':
+      await mouse.move(straightTo(new Point(absX, absY)))
+      await mouse.leftClick()
+      break
+    case 'double_click':
+      await mouse.move(straightTo(new Point(absX, absY)))
+      await mouse.doubleClick(Button.LEFT)
+      break
+    case 'right_click':
+      await mouse.move(straightTo(new Point(absX, absY)))
+      await mouse.rightClick()
+      break
+    case 'type':
+      if (action.text) await keyboard.type(action.text)
+      break
+    case 'key': {
+      const keys = parseKeys(action.keys ?? '')
+      if (keys.length > 0) await keyboard.type(...keys)
+      break
+    }
+    case 'scroll':
+      await mouse.move(straightTo(new Point(absX, absY)))
+      if (action.direction === 'up') await mouse.scrollUp(action.amount ?? 3)
+      else await mouse.scrollDown(action.amount ?? 3)
+      break
   }
 }
 
@@ -554,20 +710,28 @@ ipcMain.on('launch-overlay', () => {
   createTray(() => { /* no-op: overlay has no persistent visible state */ }, () => app.quit())
 })
 
-// Renderer signals capture is done — runs the full query pipeline
+// Renderer signals capture is done — runs the agent pipeline
 ipcMain.on(
   'capture-done',
-  (
-    _event,
-    payload: { region: { x: number; y: number; w: number; h: number }; audioData: number[] } | null,
-  ) => {
+  (_event, payload: { audioData: number[] } | null) => {
     endCapture()
     if (!payload) return
-
-    // Capture the screenshot dataUrl that was sent to the overlay (stored as lastScreenshot)
-    runQueryPipeline(payload.region, payload.audioData, lastScreenshot).catch(console.error)
+    runAgentPipeline(payload.audioData, lastScreenshot).catch(console.error)
   },
 )
+
+// Move the system mouse cursor to fractional screen coordinates
+ipcMain.on('move-mouse', (_event, x: number, y: number) => {
+  const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  const absX = Math.round(x * bounds.width) + bounds.x
+  const absY = Math.round(y * bounds.height) + bounds.y
+  mouse.move(straightTo(new Point(absX, absY))).catch(console.error)
+})
+
+// Renderer can request a fresh screenshot (used for future assessment logic)
+ipcMain.handle('take-screenshot', async () => {
+  return captureScreenshot().catch(() => '')
+})
 
 ipcMain.on('close-main-window', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender)
@@ -600,6 +764,7 @@ ipcMain.handle('register-shortcut', (_event, key: string): boolean => {
   })
   if (ok) {
     activeShortcutKey = key
+    saveSettings({ ...loadSettings(), shortcutKey: key })
     tray?.setToolTip(`HoverAI — press ${key} to capture`)
     console.log(`[shortcut] registered: ${key}`)
   }
@@ -664,6 +829,7 @@ ipcMain.handle('register-shortcut-from-settings', (_event, key: string): boolean
   })
   if (ok) {
     activeShortcutKey = key
+    saveSettings({ ...loadSettings(), shortcutKey: key })
     tray?.setToolTip(`HoverAI — press ${key} to capture`)
     console.log(`[shortcut] re-registered from settings: ${key}`)
   }
@@ -725,6 +891,19 @@ app.whenReady().then(async () => {
   }
 
   if (skipOnboarding) {
+    // Re-register the saved shortcut so it works without re-opening settings
+    const saved = loadSettings()
+    if (saved.shortcutKey) {
+      const ok = globalShortcut.register(saved.shortcutKey, () => {
+        triggerCapture().catch(console.error)
+      })
+      if (ok) {
+        activeShortcutKey = saved.shortcutKey
+        console.log(`[shortcut] restored on startup: ${saved.shortcutKey}`)
+      } else {
+        console.warn(`[shortcut] could not restore ${saved.shortcutKey} — already taken`)
+      }
+    }
     getOrCreateOverlayWindow()
     createTray(() => {}, () => app.quit())
   } else {
