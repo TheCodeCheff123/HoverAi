@@ -12,7 +12,9 @@ class BenchmarkResult(BaseModel):
     and the benchmark report script can collect it without a separate DB query.
 
     Attributes:
-        sahara_ms: Sahara end-to-end latency (upload + polling) in milliseconds.
+        sahara_ms: Sahara end-to-end latency in milliseconds.  ``None`` in
+            the HTTP response — Sahara runs as a background task and its
+            latency is only available in the database once the poll finishes.
         whisper_ms: Groq Whisper round-trip latency in milliseconds.
         afrispeech_ms: HuggingFace AfriSpeech round-trip latency in milliseconds.
         tts_ms: Groq Orpheus TTS synthesis latency in milliseconds.
@@ -20,7 +22,7 @@ class BenchmarkResult(BaseModel):
         transcript_afrispeech: HuggingFace AfriSpeech transcript text.
     """
 
-    sahara_ms: int
+    sahara_ms: int | None = None
     whisper_ms: int
     afrispeech_ms: int
     tts_ms: int

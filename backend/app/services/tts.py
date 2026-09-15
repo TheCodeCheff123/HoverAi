@@ -19,9 +19,13 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Groq OpenAI-compatible client for TTS (shared, thread-safe)
+# max_retries=1 + timeout=20s: TTS can be slow for long texts; cap retries
+# to stay within ngrok's 30s free-tier window.
 _groq_tts_client = AsyncOpenAI(
     api_key=settings.groq_api_key,
     base_url="https://api.groq.com/openai/v1",
+    max_retries=1,
+    timeout=20.0,
 )
 
 # Valid voices for canopylabs/orpheus-v1-english (confirmed from API error response)

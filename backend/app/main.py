@@ -74,12 +74,8 @@ def create_app() -> FastAPI:
     # ── CORS ──────────────────────────────────────────────────────────────────
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",  # Electron renderer dev server (Vite)
-            "http://localhost:4173",  # Electron preview build
-        ],
-        allow_origin_regex=r"http://localhost:\d+",
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

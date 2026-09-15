@@ -10,13 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 from app.db import get_session
 
-from app.routers import auth, query, users
+from app.routers import agent, auth, query, users
 
 router = APIRouter()
 
 router.include_router(auth.router, prefix="/auth", tags=["auth"])
 router.include_router(users.router, prefix="/users", tags=["users"])
 router.include_router(query.router, prefix="/query", tags=["query"])
+router.include_router(agent.router, prefix="/agent", tags=["agent"])
 
 
 @router.get("/health", tags=["meta"])
