@@ -189,6 +189,14 @@ async function getMe(): Promise<UserResponse> {
   return request<UserResponse>('/users/me')
 }
 
+async function patchMe(patch: { language?: string }): Promise<UserResponse> {
+  return request<UserResponse>('/users/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+}
+
 async function getServerSettings(): Promise<UserSettingsResponse> {
   return request<UserSettingsResponse>('/users/me/settings')
 }
@@ -208,6 +216,7 @@ export const api = {
   signin,
   signout,
   getMe,
+  patchMe,
   getServerSettings,
   patchServerSettings,
 }
