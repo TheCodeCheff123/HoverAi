@@ -1,7 +1,13 @@
-appId: com.electron.app
-productName: hover-app
+appId: com.hoverai.app
+productName: HoverAI
+copyright: Copyright © 2025 HoverAI
+
+# Where to look for icons and other build assets
 directories:
-  buildResources: build
+  buildResources: resources
+  output: dist
+
+# Files to include in the app bundle
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -9,38 +15,71 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!resources/icons-tmp/**'
+  - '!resources/icon_1024.png'
+  - '!resources/icon_build.png'
+
+# Unpack native modules from asar so they can load their .node binaries
 asarUnpack:
-  - resources/**
   - node_modules/@nut-tree-fork/**
-win:
-  executableName: hover-app
-nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
 mac:
+  icon: resources/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    - NSMicrophoneUsageDescription: HoverAI needs microphone access for voice commands.
+    - NSScreenCaptureDescription: HoverAI needs screen capture to see your current context.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
+
 dmg:
-  artifactName: ${name}-${version}.${ext}
-linux:
+  artifactName: HoverAI-${version}-mac-${arch}.${ext}
+  title: HoverAI ${version}
+
+# ── Windows ───────────────────────────────────────────────────────────────────
+win:
+  icon: resources/icon.ico
+  executableName: HoverAI
   target:
-    - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  artifactName: HoverAI-${version}-win-setup.${ext}
+  shortcutName: HoverAI
+  uninstallDisplayName: HoverAI
+  createDesktopShortcut: always
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+# ── Linux ─────────────────────────────────────────────────────────────────────
+linux:
+  icon: resources/linux-icons
+  executableName: hoverai
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  maintainer: HoverAI <hello@hoverai.app>
   category: Utility
+  description: AI-powered voice assistant with live screen context
+
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: HoverAI-${version}-linux.${ext}
+
+# ── Build config ──────────────────────────────────────────────────────────────
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
-electronDownload:
-  mirror: https://npmmirror.com/mirrors/electron/
+
+# Disable auto-update publishing for now (no update server yet)
+publish: null
