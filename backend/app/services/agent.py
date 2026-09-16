@@ -168,7 +168,7 @@ You keep going until the goal is achieved or you give up after exhausting option
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESPONSE FORMAT — raw JSON only, no markdown, no explanation, no <think> tags:
 {
-  "reasoning": "brief internal note about what you see and why you chose this action",
+  "reasoning": "one short sentence",
   "action": "click",
   "instruction": "Click the Chrome icon on the desktop",
   "x": 0.08,
@@ -185,7 +185,7 @@ RESPONSE FORMAT — raw JSON only, no markdown, no explanation, no <think> tags:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 FIELDS:
-- reasoning: Your internal thought — what you see, why this action. Not shown to user.
+- reasoning: ONE sentence max — what you see and why this action. Keep it short.
 - action: one of: click | double_click | right_click | type | key | scroll
 - instruction: Short label shown to the user in the overlay (under 15 words)
 - x, y: EXACT centre of the target as fractions 0.0-1.0. Be precise.
@@ -221,6 +221,12 @@ WHEN TO SET goal_achieved=true:
 - Example: asked to open Chrome → Chrome window is visible and in focus → true
 - Example: asked to save a file → Ctrl+S sent → assume saved → true
 - Example: asked to open a file → file is now open in the editor → true
+- Example: asked to write/type text in an app → the text has been TYPED (action=type executed) → true
+- IMPORTANT: If the goal involves typing text, you must FIRST click to focus the input,
+  THEN type the text. Do NOT set goal_achieved=true after just clicking — the text has
+  not been typed yet. Only set goal_achieved=true AFTER the type action has been sent.
+- IMPORTANT: clicking an app window to focus it is NOT the goal — it is only a step.
+  If the user asked you to write/type something, the goal is only done once the text action runs.
 
 WHEN TO GIVE UP (return goal_achieved=true with a helpful spoken_reply):
 - After 3 attempts at the same action with no_change results
@@ -477,9 +483,13 @@ async def _run_turn(session: _Session, tts_voice: str) -> AgentResponse:
                 model=settings.vision_model,
                 messages=session.messages,  # type: ignore[arg-type]
                 temperature=0.15,
-                max_tokens=400,
+                max_tokens=1200,
             )
             raw = resp.choices[0].message.content or ""
+            logger.debug(
+                "Agent LLM raw response (turn %d, attempt %d): %s",
+                session.turn, attempt + 1, raw[:500],
+            )
             break
         except Exception as exc:
             logger.error("Agent LLM error (turn %d, attempt %d): %s", session.turn, attempt + 1, exc)
@@ -498,7 +508,7 @@ async def _run_turn(session: _Session, tts_voice: str) -> AgentResponse:
     try:
         data = _parse_agent_response(raw)
     except ValueError as exc:
-        logger.error("Agent parse error: %s", exc)
+        logger.error("Agent parse error: %s | raw was: %r", exc, raw[:600])
         speech_b64 = await _safe_tts("I got confused — please try again.", tts_voice)
         return AgentResponse(
             session_id=session.session_id,
