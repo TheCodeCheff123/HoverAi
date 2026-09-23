@@ -140,18 +140,14 @@ async function parseResponse<T>(resp: Response): Promise<T> {
 }
 
 async function tryRefresh(): Promise<string | null> {
-  // We need the refresh token — but it's in safeStorage (main process only).
-  // We can't access it from the renderer. Instead we call an IPC bridge that
-  // does the refresh entirely in the main process and returns the new access token.
-  // For now, call the main process via the existing IPC pattern:
-  // The main process exposes `get-access-token` but the refresh must happen there too.
-  // We delegate: clear access token to signal main to refresh on next getAccessToken call.
-  // Instead we just return null here and let the main process handle refresh.
-  // The renderer-facing refresh is: renderer calls `window.api.getAccessToken()` —
-  // but main doesn't auto-refresh. So we surface a dedicated `refreshTokens` IPC.
-  // Since we didn't add one, we return null here and let AuthExpiredError surface.
-  // The full refresh path is handled in the main process query pipeline (ST4).
-  return null
+  // Delegates to main process via the refresh-tokens IPC channel.
+  // Main holds the refresh token in safeStorage and performs the actual
+  // /auth/refresh call, stores the new pair, and returns the new access token.
+  try {
+    return await window.api.refreshTokens()
+  } catch {
+    return null
+  }
 }
 
 // ─── Auth endpoints ───────────────────────────────────────────────────────────

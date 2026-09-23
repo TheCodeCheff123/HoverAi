@@ -1,6 +1,6 @@
 import { contextBridge, shell, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { CaptureDonePayload, AgentResponse } from './index.d'
+import type { CaptureDonePayload, QueryResponse } from './index.d'
 
 // Custom APIs for renderer
 const api = {
@@ -25,6 +25,7 @@ const api = {
     ipcRenderer.invoke('store-tokens', access, refresh),
   getAccessToken: (): Promise<string | null> => ipcRenderer.invoke('get-access-token'),
   clearTokens: (): Promise<void> => ipcRenderer.invoke('clear-tokens'),
+  refreshTokens: (): Promise<string | null> => ipcRenderer.invoke('refresh-tokens'),
 
   // ── Screen capture ──────────────────────────────────────────────────────────
   onCaptureStart: (cb: (screenshotDataUrl: string, shortcutKey: string) => void) => {
@@ -41,21 +42,16 @@ const api = {
   captureDone: (result: CaptureDonePayload) => ipcRenderer.send('capture-done', result),
   takeScreenshot: (): Promise<string> => ipcRenderer.invoke('take-screenshot'),
 
-  // ── Agent pipeline push results ─────────────────────────────────────────────
-  onAgentTurn: (cb: (resp: AgentResponse) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, resp: AgentResponse) => cb(resp)
-    ipcRenderer.on('agent-turn', handler)
-    return () => ipcRenderer.off('agent-turn', handler)
+  // ── Query pipeline push results ─────────────────────────────────────────────
+  onQueryResult: (cb: (resp: QueryResponse) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, resp: QueryResponse) => cb(resp)
+    ipcRenderer.on('query-result', handler)
+    return () => ipcRenderer.off('query-result', handler)
   },
-  onAgentDone: (cb: (resp: AgentResponse) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, resp: AgentResponse) => cb(resp)
-    ipcRenderer.on('agent-done', handler)
-    return () => ipcRenderer.off('agent-done', handler)
-  },
-  onAgentError: (cb: (message: string) => void) => {
+  onQueryError: (cb: (message: string) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, message: string) => cb(message)
-    ipcRenderer.on('agent-error', handler)
-    return () => ipcRenderer.off('agent-error', handler)
+    ipcRenderer.on('query-error', handler)
+    return () => ipcRenderer.off('query-error', handler)
   },
 }
 
