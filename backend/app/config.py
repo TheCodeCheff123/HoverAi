@@ -53,15 +53,33 @@ class Settings(BaseSettings):
     # ── HuggingFace (AfriSpeech Whisper — benchmark #3) ───────────────────────
     hf_api_key: str
 
-    # ── Model names ───────────────────────────────────────────────────────────
+    # ── Model names (Groq fallback) ───────────────────────────────────────────
     vision_model: str = "qwen/qwen3.8-27b"
     whisper_model: str = "whisper-large-v3"
     hf_asr_model: str = "openai/whisper-large-v3"
 
-    # ── TTS (Groq Orpheus) ────────────────────────────────────────────────────
+    # ── TTS (Groq Orpheus — English) ──────────────────────────────────────────
     tts_model: str = "canopylabs/orpheus-v1-english"
     tts_voice: str = "autumn"  # valid: autumn | diana | hannah | austin | daniel | troy
     tts_enabled: bool = True   # set False to skip TTS and return empty speech_b64
+
+    # ── Sahara TTS (Intron — African languages) ───────────────────────────────
+    # When sahara_tts_enabled=True, African-language requests use Sahara TTS
+    # (pcm+pidgin, yo+yoruba, ha+hausa, ig+igbo) for an authentic voice.
+    # Groq Orpheus is used as fallback if Sahara fails, and for "en" / "fr".
+    sahara_tts_enabled: bool = True
+
+    # ── Local Ollama two-step pipeline (optional) ─────────────────────────────
+    # Step 1: local_vision_model (moondream) — describes the screenshot in plain text
+    # Step 2: local_llm_model (qwen2.5:3b)  — takes description + goal → JSON steps
+    # Groq is used as automatic fallback if either step times out or fails.
+    # Leave LOCAL_LLM_BASE_URL blank to use Groq for everything (single step).
+    local_llm_base_url: str = ""            # e.g. "https://abc123.ngrok-free.app/v1"
+    local_llm_api_key: str = "ollama"       # Ollama ignores the key but AsyncOpenAI requires one
+    local_vision_model: str = "moondream"   # captioning model — describes the screenshot
+    local_llm_model: str = "qwen2.5:3b"     # instruction-following model — generates JSON steps
+    local_vision_timeout: float = 60.0      # moondream caption timeout
+    local_llm_timeout: float = 90.0         # qwen2.5 reasoning timeout
 
 
 # Module-level singleton — import this everywhere instead of instantiating Settings()

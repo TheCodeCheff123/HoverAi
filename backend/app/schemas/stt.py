@@ -4,30 +4,30 @@ from pydantic import BaseModel
 
 
 class STTResult(BaseModel):
-    """Aggregated result from all three STT engines.
+    """Result from the in-request STT pipeline.
 
-    Sahara runs as a background task after the HTTP response is returned,
-    so ``transcript`` and ``sahara_latency_ms`` are initially ``None`` /
-    empty and filled in asynchronously once the poll completes.
+    **Live path (blocks until response):**
+    Groq Whisper (~1-2s) provides the transcript that drives vision + TTS.
+    It is the only transcription engine that runs in the request/response cycle.
+
+    **Background path (fires after response is sent):**
+    Sahara upload (~1-2s) runs concurrently with Groq during the request to
+    obtain a ``file_id``.  A background task then polls Sahara (2-3 min) for
+    the African-language transcript and writes it to the DB as a benchmark
+    record — it never feeds back into the live response.
+
+    Sahara *cannot* be used as the live transcription path because it takes
+    2-3 minutes to return a transcript. Groq Whisper handles all African
+    languages (``yo``, ``ha``, ``ig``, ``pcm``) via auto-detection and is
+    the correct fast-path engine.
 
     Attributes:
-        transcript: Sahara transcript — the primary output used for vision.
-            Initially an empty string; set once the background poll finishes.
-        sahara_file_id: Intron Sahara ``file_id`` returned by the upload step.
-            Passed to the background task so it can poll and write the result.
-            ``None`` when the upload failed.
-        sahara_latency_ms: End-to-end Sahara latency including polling wait.
-            ``None`` until the background task completes.
-        transcript_whisper: Groq whisper-large-v3 transcript.
+        transcript: Groq Whisper transcript — used immediately for vision.
         whisper_latency_ms: Groq Whisper round-trip latency in milliseconds.
-        transcript_afrispeech: HuggingFace whisper-large-v3 transcript.
-        afrispeech_latency_ms: HuggingFace Inference API latency in milliseconds.
+        sahara_file_id: Sahara file_id for the background poll task.
+            ``None`` when the upload failed — background poll is skipped.
     """
 
     transcript: str = ""
+    whisper_latency_ms: int = 0
     sahara_file_id: str | None = None
-    sahara_latency_ms: int | None = None
-    transcript_whisper: str
-    whisper_latency_ms: int
-    transcript_afrispeech: str
-    afrispeech_latency_ms: int

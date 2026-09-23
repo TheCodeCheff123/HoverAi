@@ -311,44 +311,33 @@ async def _call_hf_afrispeech(wav_bytes: bytes, language: str) -> tuple[str, int
 
 
 async def run_stt(audio_bytes: bytes, wav_bytes: bytes, language: str) -> STTResult:
-    """Run the fast STT engines concurrently and kick off the Sahara upload.
+    """Run Groq Whisper in-request and kick off Sahara upload concurrently.
 
-    Fires Groq Whisper and HuggingFace AfriSpeech simultaneously using
-    ``asyncio.gather`` — both complete in ~3-8 s.
+    Groq Whisper (~1-2s) drives the live response immediately.
+    Sahara upload (~1-2s) fires in parallel — the returned file_id is passed
+    to a background task that polls until the African-language transcript is
+    ready (~2-3 min) and writes it to the DB for the hackathon benchmark record.
 
-    Sahara is split into two phases:
-      * Upload (this function): runs after the gather, takes ~1-2 s,
-        returns a file_id stored in STTResult.sahara_file_id.
-      * Poll (background task in the router): runs after the HTTP
-        response is sent; takes 2-3 min on the free-tier queue.
+    HuggingFace AfriSpeech has been removed — it used the same Whisper model
+    as Groq but was slower and added no value over the Groq result.
 
     Args:
-        audio_bytes: Raw WebM bytes from Electron MediaRecorder — sent
-                     directly to Sahara (no conversion needed).
-        wav_bytes: WAV bytes at 16 kHz mono — used for Groq Whisper and
-                   HuggingFace AfriSpeech (produced by convert_to_wav).
+        audio_bytes: Raw WebM bytes — sent directly to Sahara (no conversion).
+        wav_bytes: WAV bytes at 16 kHz mono — used by Groq Whisper.
         language: Hover AI language code (e.g. ``"en-pidgin"``).
 
     Returns:
-        An STTResult with Groq + HF transcripts set, transcript empty
-        (filled later by background task), and sahara_file_id set when
-        the upload succeeded.
+        An ``STTResult`` with the Groq Whisper transcript ready for immediate
+        use, and a ``sahara_file_id`` for the background poll task.
     """
-    # ── Fast engines — concurrent ─────────────────────────────────────────
-    (whisper_text, whisper_ms), (hf_text, hf_ms) = await asyncio.gather(
+    # Run Groq Whisper and Sahara upload concurrently — both finish in ~1-2s
+    (whisper_text, whisper_ms), (file_id, _) = await asyncio.gather(
         _call_groq_whisper(wav_bytes, language),
-        _call_hf_afrispeech(wav_bytes, language),
+        _sahara_upload(audio_bytes, language),
     )
 
-    # ── Sahara upload — fast (~1-2 s), must finish before we respond ──────
-    file_id, _upload_ms = await _sahara_upload(audio_bytes, language)
-
     return STTResult(
-        transcript="",          # filled by sahara_poll_and_update background task
-        sahara_file_id=file_id, # None when upload failed — poll will be skipped
-        sahara_latency_ms=None, # filled by background task
-        transcript_whisper=whisper_text,
+        transcript=whisper_text,
         whisper_latency_ms=whisper_ms,
-        transcript_afrispeech=hf_text,
-        afrispeech_latency_ms=hf_ms,
+        sahara_file_id=file_id,
     )

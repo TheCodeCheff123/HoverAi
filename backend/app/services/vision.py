@@ -20,10 +20,11 @@ import json
 import logging
 import re
 
-from openai import AsyncOpenAI
+import openai
 
 from app.config import settings
 from app.schemas.vision import BeaconStep, VisionResult
+from app.services.llm_client import active_vision_model, groq_client, vision_client
 
 logger = logging.getLogger(__name__)
 
@@ -88,89 +89,137 @@ def _compress_screenshot(screenshot_b64: str) -> str:
         return screenshot_b64
 
 
-# Groq OpenAI-compatible client (text/chat completions)
-# max_retries=1 + timeout=20s: prevents the default 2×11s retry from blowing
-# ngrok's 30s free-tier request timeout.
-_groq_vision_client = AsyncOpenAI(
-    api_key=settings.groq_api_key,
-    base_url="https://api.groq.com/openai/v1",
-    max_retries=1,
-    timeout=20.0,
-)
-
-# System prompt — instructs the model to return ONLY valid JSON.
-# The BeaconStep schema is embedded inline so the model knows the exact shape.
-# The screenshot is passed as a vision content block (type: image_url) so the
-# model actually decodes the image — NOT as raw base64 text in the string.
-_SYSTEM_PROMPT = """You are Hover — a smart, warm AI buddy that lives inside the user's computer \
-and controls their mouse for them.
-
-You receive a screenshot of the user's screen (compressed but accurate) and a voice instruction.
-Your job is to find the EXACT pixel location of what they need and move the mouse there.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RESPONSE FORMAT — raw JSON only, no markdown, no explanation:
-{
-  "summary": "Warm spoken reply — 1-2 sentences, directly to the user",
-  "steps": [
-    {
-      "step": 1,
-      "action": "click",
-      "instruction": "Click the Chrome icon on the taskbar",
-      "x": 0.04,
-      "y": 0.97,
-      "w": 0.03,
-      "h": 0.05
-    }
-  ]
+# Per-language instructions injected into the system prompt.
+# Key: Hover AI language code.  Value: (label, tone_instruction, summary_example)
+#   label            — human-readable name shown to the model
+#   tone_instruction — exact register/dialect the model must write in
+#   summary_example  — a one-sentence example summary in that language/dialect
+_LANGUAGE_CONFIGS: dict[str, tuple[str, str, str]] = {
+    "en-pidgin": (
+        "Nigerian Pidgin English",
+        (
+            "Write ALL text in warm, natural Nigerian Pidgin English — the way a helpful "
+            "Lagos friend would explain things. Use pidgin vocabulary and rhythm: "
+            "'You don click am', 'Abeg click here', 'E go work', 'Make you', 'I don see am', "
+            "'Na so e dey work', 'Click the thing wey dey on top'. "
+            "Mix in everyday English words for technical terms (Excel, button, menu) but "
+            "keep the sentence structure and feel as pidgin. Never switch to formal English."
+        ),
+        "I don see your Excel spreadsheet! Make I show you how to do am.",
+    ),
+    "yo": (
+        "Yoruba",
+        (
+            "Write ALL text in Yoruba. Use clear, natural Yoruba as a helpful friend would speak. "
+            "Technical terms (Excel, button, menu, click) may remain in English since they have "
+            "no standard Yoruba equivalents — but all other text must be in Yoruba."
+        ),
+        "Mo ti ri iwe-iṣiro Excel rẹ! Jẹ́ kí n ṣe àlàyé bí o ṣe lè ṣe é.",
+    ),
+    "ha": (
+        "Hausa",
+        (
+            "Write ALL text in Hausa. Use clear, natural Hausa as a helpful friend would speak. "
+            "Technical terms (Excel, button, menu, click) may remain in English since they have "
+            "no standard Hausa equivalents — but all other text must be in Hausa."
+        ),
+        "Na ga takarda Excel ɗinka! Bari in nuna maka yadda za ka yi shi.",
+    ),
+    "ig": (
+        "Igbo",
+        (
+            "Write ALL text in Igbo. Use clear, natural Igbo as a helpful friend would speak. "
+            "Technical terms (Excel, button, menu, click) may remain in English since they have "
+            "no standard Igbo equivalents — but all other text must be in Igbo."
+        ),
+        "Ahụrụ m ihe Excel gị! Ka m gọọ gị otú esi eme ya.",
+    ),
+    "fr": (
+        "French",
+        "Write ALL text in French. Use clear, warm, natural French.",
+        "Je vois votre feuille Excel ! Voici comment procéder.",
+    ),
+    "en": (
+        "English",
+        "Write ALL text in clear, warm, natural English.",
+        "I can see your Excel spreadsheet! Here's how to do it.",
+    ),
 }
+
+_DEFAULT_LANGUAGE_CONFIG = _LANGUAGE_CONFIGS["en"]
+
+
+def _build_system_prompt(language: str) -> str:
+    """Build the vision system prompt with a concrete language instruction.
+
+    Replaces the vague "write in the user's language" rule with an explicit
+    register description, tone guidance, and a concrete example sentence so
+    the model knows exactly what dialect/register to write in.
+
+    Args:
+        language: Hover AI language code (e.g. ``"en-pidgin"``).
+
+    Returns:
+        Full system prompt string with language instruction injected.
+    """
+    label, tone_instruction, summary_example = _LANGUAGE_CONFIGS.get(
+        language, _DEFAULT_LANGUAGE_CONFIG
+    )
+
+    return f"""You are Hover — a warm, knowledgeable AI assistant that guides \
+users step-by-step through tasks on their computer.
+
+You receive a screenshot of the user's screen and a voice instruction.
+Your job is to look at what is on screen and give the user clear, numbered \
+instructions they can follow themselves to complete the task.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESPONSE FORMAT — raw JSON only, no markdown, no explanation, no <think> tags:
+{{
+  "summary": "{summary_example}",
+  "steps": [
+    {{
+      "step": 1,
+      "instruction": "...",
+      "keys": null,
+      "tip": null
+    }},
+    {{
+      "step": 2,
+      "instruction": "...",
+      "keys": "Enter",
+      "tip": "..."
+    }}
+  ]
+}}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-COORDINATE RULES — BE PRECISE:
-- x, y, w, h are fractions of screen size: 0.0 to 1.0
-- x and y are the EXACT CENTRE of the clickable element — not near it, ON IT
-- The image you receive is a downscaled screenshot. When estimating coordinates,
-  account for the original screen resolution (typically 1920×1080 or 2560×1440).
-- For small icons (taskbar, desktop): they are usually 32–64px wide on the real screen.
-  A taskbar icon at x=0.04 means 76px from the left on a 1920px screen — be that precise.
-- Scan the WHOLE image methodically before deciding coordinates.
-- For desktop icons: they are arranged in a grid. Count the icon's column and row position.
-  Desktop grid typically starts at x≈0.03 (first column) with ~0.08 spacing between icons.
-  First row is typically y≈0.10, with ~0.12 spacing between rows.
-- For taskbar icons (Windows bottom bar, macOS dock): y is close to 0.95–1.0.
-  Each icon is spaced roughly every 0.04 units horizontally.
-- For browser tabs: y≈0.03–0.05. Each tab is roughly 0.15 wide.
-- For application menus (File, Edit, View): y≈0.03, x follows the menu label position.
+LANGUAGE — {label}:
+{tone_instruction}
 
-ACTION FIELD — what should happen at these coordinates:
-- "click"       — single left click (opening apps, buttons, links)
-- "double_click"— double click (opening files/folders on desktop)
-- "right_click" — right click (context menus)
-- "type"        — type text (x/y point to the input field; add "text" field with what to type)
-- "key"         — keyboard shortcut (add "keys" field, e.g. "Ctrl+S", "Alt+F4", "Win+D")
-- "scroll"      — scroll at position (add "direction": "up"/"down", "amount": 3)
+STEP RULES:
+- Write each instruction as a clear, complete sentence a non-technical user can follow.
+- Be specific: name the exact button, menu item, cell, or key to use.
+- Reference what you actually see on screen — if you can see the app name, menu labels,
+  cell references, or button text, use those exact names.
+- If a step involves a keyboard shortcut, put it in the "keys" field (e.g. "Ctrl+S").
+- Use the "tip" field for extra context, warnings, or variations (keep it short).
+- Break the task into as many steps as needed — do not skip steps or combine unrelated actions.
+- Order steps exactly as they must be performed.
 
-For keyboard actions that don't need mouse movement, set x=0.5, y=0.5.
+STEP EXAMPLES by task type:
+- "sum rows in Excel": click target cell → type =SUM(range) → Enter
+- "open a file": File menu → Open → navigate to file → double-click it
+- "save as PDF": File → Export / Save As → choose PDF format → Save
+- "apply a filter": select header row → Data tab → Filter button
+- "bold text in Word": select the text → Ctrl+B or click Bold button on toolbar
+- "create a chart": select data range → Insert tab → Chart → choose type → OK
 
-MULTI-STEP TASKS — think like an agent:
-- If the task requires multiple actions, break it into ALL necessary steps.
-- Example: "minimize this and open Chrome from desktop":
-    step 1: action=key, keys="Alt+F4" or keys="Win+Down" (minimize), x=0.5, y=0.5
-    step 2: action=double_click, target the Chrome icon on the desktop
-- Example: "open the settings menu":
-    step 1: click the ⚙ Settings icon or the three-dot menu
-- Example: "save this file":
-    step 1: action=key, keys="Ctrl+S", x=0.5, y=0.5
-- Do NOT stop at one step if the task clearly needs more.
-- Order steps exactly as they must be executed — the app runs them in sequence.
-
-SUMMARY RULES — spoken aloud via TTS, so make it sound natural:
-- Speak directly to the user: "I can see you're on VSCode!", "Sure, on it!"
-- Name what you see: the app, the page, the context
-- Keep it under 2 sentences
-- Sound like a helpful friend, not a robot
-- Match the user's language (given in the instruction)
-- NEVER say "The user wants..." or "The user is asking..." — always say "you"
+SUMMARY RULES — this is spoken aloud via TTS:
+- Speak directly and warmly using the {label} tone above.
+- Name the app and what you see on screen.
+- Keep it to 1-2 sentences maximum.
+- NEVER say "The user wants..." — always say "you" / "your".
 
 Return ONLY the JSON object. No markdown. No preamble. No extra text. No <think> tags."""
 
@@ -209,10 +258,33 @@ def _strip_thinking(raw: str) -> str:
     return cleaned.strip()
 
 
+def _extract_json(raw: str) -> str:
+    """Extract the JSON object from a model response robustly.
+
+    Handles: bare JSON, ```json fences, ``` fences, prose prefixes,
+    and <think> blocks (Qwen3 chain-of-thought).
+
+    Args:
+        raw: Raw model output string.
+
+    Returns:
+        Extracted JSON string ready for ``json.loads``.
+    """
+    text = _strip_thinking(raw).strip()
+    # Strip any markdown code fence
+    fence = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    # Pull out first {...} block if response doesn't start with {
+    if not text.startswith("{"):
+        brace = re.search(r"\{.*\}", text, re.DOTALL)
+        if brace:
+            text = brace.group(0)
+    return text
+
+
 def _parse_vision_response(raw: str) -> VisionResult:
     """Parse the raw model response string into a VisionResult.
-
-    Strips Qwen3 <think> blocks and accidental markdown fences before parsing.
 
     Args:
         raw: Raw string output from the vision LLM.
@@ -224,118 +296,237 @@ def _parse_vision_response(raw: str) -> VisionResult:
         VisionParseError: If the string is not valid JSON or does not
             match the expected schema.
     """
-    cleaned = _strip_thinking(raw)
-
-    # Strip markdown fences if the model added them despite instructions
-    if cleaned.startswith("```"):
-        lines = cleaned.splitlines()
-        cleaned = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-
     try:
-        data = json.loads(cleaned)
+        data = json.loads(_extract_json(raw))
         steps = [BeaconStep(**s) for s in data.get("steps", [])]
         return VisionResult(steps=steps, summary=data.get("summary", ""))
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise VisionParseError(raw) from exc
 
 
-async def run_vision(
-    screenshot_b64: str,
+async def _groq_vision(
+    image_data_uri: str,
     transcript: str,
     language: str,
 ) -> VisionResult:
-    """Extract beacon steps from a screenshot + transcript using Groq Qwen3-8B-27b.
+    """Single-step Groq vision: image + transcript → JSON steps directly.
 
-    Compresses the screenshot to 512x288 JPEG at 35% quality (~1,100-1,450
-    image tokens) and sends it as a proper vision content block alongside the
-    voice transcript. Total token budget stays well under 7,000 ITPM.
-
-    The image is passed as ``{"type": "image_url", "image_url": {"url": ...}}``
-    inside the content array — NOT as raw base64 text in the message string.
-    Raw base64 text is read as plain characters (spending ~10k tokens with zero
-    visual understanding); the image_url block triggers actual image decoding.
-
-    On JSON parse failure the call is retried once with a stricter prompt.
-    If the second attempt also fails, a ``VisionParseError`` is raised.
+    Groq's qwen3.8-27b is multimodal and instruction-following, so it can
+    accept the image and produce the JSON steps in one call.
 
     Args:
-        screenshot_b64: Base64-encoded PNG/JPEG of the full screen. May be
-                        a plain base64 string or a ``data:image/...`` URI —
-                        both are handled. Compressed before sending.
-        transcript: Primary transcript from STT used to identify UI elements.
-        language: Hover AI language code (e.g. ``"en-pidgin"``). Passed to
-                  the model so instructions are written in the right language.
+        image_data_uri: ``data:image/jpeg;base64,...`` URI of the compressed screenshot.
+        transcript: User's voice instruction.
+        language: Hover AI language code.
 
     Returns:
-        A ``VisionResult`` containing the list of beacon steps and a summary.
+        Parsed ``VisionResult``.
 
     Raises:
-        VisionParseError: If both the first and retry attempt fail to produce
-            parseable JSON.
+        VisionParseError: If the model returns unparseable JSON after one retry.
     """
-    # Compress to 512x288 JPEG q=35 — keeps image tokens ~1,100-1,450
-    compressed_b64 = _compress_screenshot(screenshot_b64)
-    image_data_uri = f"data:image/jpeg;base64,{compressed_b64}"
-
-    # Vision content block — the model decodes this as an actual image.
-    # Passing base64 as plain text in the string instead would read it as
-    # raw characters and spend ~10k tokens with no visual understanding.
     user_content = [
-        {
-            "type": "image_url",
-            "image_url": {"url": image_data_uri},
-        },
+        {"type": "image_url", "image_url": {"url": image_data_uri}},
         {
             "type": "text",
             "text": (
                 f"Voice instruction (language: {language}):\n{transcript}\n\n"
-                "Analyse the screenshot and the voice instruction, then identify "
-                "the UI elements and return beacon steps as JSON."
+                "Look at the screenshot and give the user step-by-step instructions "
+                "to complete their request. Return JSON."
             ),
         },
     ]
-
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+    messages: list[dict] = [
+        {"role": "system", "content": _build_system_prompt(language)},
         {"role": "user", "content": user_content},
     ]
-
     for attempt in range(2):
         if attempt == 1:
             messages.append({
                 "role": "user",
-                "content": (
-                    "Your previous response was not valid JSON. "
-                    "Return ONLY the raw JSON object with no extra text, "
-                    "no <think> tags, no markdown."
-                ),
+                "content": "Invalid JSON. Return ONLY the raw JSON object, no markdown, no <think> tags.",
             })
-
         try:
-            response = await _groq_vision_client.chat.completions.create(
+            resp = await groq_client.chat.completions.create(
                 model=settings.vision_model,
                 messages=messages,  # type: ignore[arg-type]
-                temperature=0.1,    # low temperature for deterministic JSON output
-                max_tokens=1024,
+                temperature=0.1,
+                max_tokens=512,
             )
-            raw = response.choices[0].message.content or ""
+            raw = resp.choices[0].message.content or ""
             result = _parse_vision_response(raw)
             if attempt > 0:
-                logger.info("Vision parsed successfully on retry attempt %d", attempt + 1)
+                logger.info("Groq vision parsed on retry attempt %d", attempt + 1)
             return result
-
         except VisionParseError:
             if attempt == 1:
-                logger.error(
-                    "Vision model returned unparseable JSON after retry. "
-                    "transcript=%r",
-                    transcript[:100],
-                )
+                logger.error("Groq vision unparseable after retry. transcript=%r", transcript[:80])
                 raise
-            logger.warning("Vision parse failed on attempt %d, retrying...", attempt + 1)
+            logger.warning("Groq vision parse failed attempt %d, retrying...", attempt + 1)
         except Exception as exc:
-            logger.error("Vision LLM error: %s", exc, exc_info=True)
+            logger.error("Groq vision error: %s", exc, exc_info=True)
             raise
+    raise VisionParseError("Groq vision loop exited")  # pragma: no cover
 
-    # Unreachable — range(2) always returns or raises on both attempts.
-    raise VisionParseError("Vision loop exited without returning")  # pragma: no cover
+
+async def _local_two_step_vision(
+    image_data_uri: str,
+    transcript: str,
+    language: str,
+) -> VisionResult:
+    """Two-step local pipeline: moondream captions → qwen2.5:3b generates JSON.
+
+    Step 1 — moondream (vision only, no JSON):
+        Receives the screenshot with a simple "describe what you see" prompt.
+        Returns a plain-text description — moondream is NOT instruction-following
+        and cannot produce JSON, so we never ask it to.
+
+    Step 2 — qwen2.5:3b (text only, no image):
+        Receives the screen description + user goal.
+        Produces the full JSON steps response.
+
+    Falls back to ``_groq_vision`` on any timeout or error.
+
+    Args:
+        image_data_uri: ``data:image/jpeg;base64,...`` URI of the compressed screenshot.
+        transcript: User's voice instruction.
+        language: Hover AI language code.
+
+    Returns:
+        Parsed ``VisionResult``.
+    """
+    # ── Step 1: moondream caption ─────────────────────────────────────────────
+    caption_prompt = (
+        f"The user wants to: {transcript}\n\n"
+        "Describe everything you see on this screen. "
+        "Include: the application name, all visible menus, buttons, text fields, "
+        "toolbars, content, and any relevant text. Be specific and detailed."
+    )
+    screen_description = ""
+    try:
+        caption_resp = await vision_client.chat.completions.create(
+            model=active_vision_model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_data_uri}},
+                        {"type": "text", "text": caption_prompt},
+                    ],
+                }
+            ],
+            max_tokens=150,
+            temperature=0.1,
+        )
+        screen_description = caption_resp.choices[0].message.content or ""
+        logger.info(
+            "Moondream caption complete (%d chars): %s",
+            len(screen_description),
+            screen_description[:120],
+        )
+    except (openai.APITimeoutError, openai.APIConnectionError) as exc:
+        logger.warning(
+            "Moondream caption timed out (%s) — falling back to Groq", exc.__class__.__name__
+        )
+        return await _groq_vision(image_data_uri, transcript, language)
+    except Exception as exc:
+        logger.warning("Moondream caption failed (%s) — falling back to Groq", exc)
+        return await _groq_vision(image_data_uri, transcript, language)
+
+    if not screen_description.strip():
+        logger.warning("Moondream returned empty caption — falling back to Groq")
+        return await _groq_vision(image_data_uri, transcript, language)
+
+    # ── Step 2: qwen2.5:3b → JSON steps (text only, no image) ────────────────
+    reasoning_user_content = (
+        f"The user said (language: {language}): {transcript}\n\n"
+        f"Current screen:\n{screen_description}\n\n"
+        "Based on what is on screen and what the user wants, "
+        "provide step-by-step instructions as JSON."
+    )
+    reasoning_messages: list[dict] = [
+        {"role": "system", "content": _build_system_prompt(language)},
+        {"role": "user", "content": reasoning_user_content},
+    ]
+    for attempt in range(2):
+        if attempt == 1:
+            reasoning_messages.append({
+                "role": "user",
+                "content": "Invalid JSON. Return ONLY the raw JSON object, no markdown.",
+            })
+        try:
+            from app.services.llm_client import llm_client, active_llm_model  # noqa: PLC0415
+            resp = await llm_client.chat.completions.create(
+                model=active_llm_model,
+                messages=reasoning_messages,  # type: ignore[arg-type]
+                temperature=0.1,
+                max_tokens=512,
+            )
+            raw = resp.choices[0].message.content or ""
+            result = _parse_vision_response(raw)
+            if attempt > 0:
+                logger.info("Local reasoning parsed on retry attempt %d", attempt + 1)
+            return result
+        except VisionParseError:
+            if attempt == 1:
+                logger.warning(
+                    "Local reasoning unparseable after retry — falling back to Groq"
+                )
+                return await _groq_vision(image_data_uri, transcript, language)
+            logger.warning("Local reasoning parse failed attempt %d, retrying...", attempt + 1)
+        except (openai.APITimeoutError, openai.APIConnectionError) as exc:
+            logger.warning(
+                "Local reasoning model timed out (%s) — falling back to Groq",
+                exc.__class__.__name__,
+            )
+            return await _groq_vision(image_data_uri, transcript, language)
+        except Exception as exc:
+            logger.warning("Local reasoning model error (%s) — falling back to Groq", exc)
+            return await _groq_vision(image_data_uri, transcript, language)
+
+    return await _groq_vision(image_data_uri, transcript, language)  # pragma: no cover
+
+
+async def run_vision(
+    screenshot_b64: str,
+    transcript: str,
+    language: str,
+    compressed_b64: str | None = None,
+) -> VisionResult:
+    """Generate guided step-by-step instructions from a screenshot + voice transcript.
+
+    Routes to the appropriate pipeline based on configuration:
+      - Local mode (LOCAL_LLM_BASE_URL set): moondream captions → qwen2.5:3b JSON
+        with automatic Groq fallback on any timeout or failure.
+      - Groq-only mode: single call to qwen3.8-27b (multimodal).
+
+    Args:
+        screenshot_b64: Base64-encoded PNG/JPEG of the full screen.
+        transcript: Primary STT transcript.
+        language: Hover AI language code (e.g. ``"en-pidgin"``).
+        compressed_b64: Pre-compressed base64 JPEG from a parallel compression
+            task. When provided, the internal ``_compress_screenshot`` call is
+            skipped entirely, saving ~200-400ms.
+
+    Returns:
+        A ``VisionResult`` with ordered ``BeaconStep`` instructions and a summary.
+
+    Raises:
+        VisionParseError: Only raised if Groq also fails after all retries.
+    """
+    if compressed_b64 is None:
+        compressed_b64 = _compress_screenshot(screenshot_b64)
+    image_data_uri = f"data:image/jpeg;base64,{compressed_b64}"
+
+    # Local two-step: moondream caption → qwen2.5:3b JSON (Groq fallback built-in)
+    if vision_client is not groq_client:
+        logger.info(
+            "Vision: local two-step pipeline (%s caption → %s reasoning)",
+            active_vision_model,
+            settings.local_llm_model,
+        )
+        return await _local_two_step_vision(image_data_uri, transcript, language)
+
+    # Groq-only: single multimodal call
+    logger.info("Vision: Groq-only pipeline (%s)", settings.vision_model)
+    return await _groq_vision(image_data_uri, transcript, language)

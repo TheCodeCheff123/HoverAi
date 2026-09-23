@@ -50,11 +50,14 @@ import secrets
 import time
 from typing import Any
 
-import httpx
-from openai import AsyncOpenAI
-
 from app.config import settings
 from app.schemas.agent import AgentAction, AgentResponse
+from app.services.llm_client import (
+    active_llm_model,
+    active_vision_model,
+    llm_client,
+    vision_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,14 +65,13 @@ logger = logging.getLogger(__name__)
 
 MAX_AGENT_TURNS: int = 6          # hard cap — prevents runaway loops
 SESSION_TTL_S: float = 300.0      # 5 min inactivity → session expires
-# Minimum seconds between turns within the same session.
-# Groq free tier: 30 RPM total across all models.
-# One agent session uses 3 Groq calls (Whisper + Qwen3 + TTS).
-# Enforcing 3 s between turns keeps burst rate manageable.
+# Minimum gap between turns — enforced when Groq handles reasoning (30 RPM).
+# In full local mode (both vision + reasoning on Ollama) this is skipped.
+# In hybrid mode (moondream vision + Groq reasoning) this IS enforced.
 MIN_TURN_INTERVAL_S: float = 3.0
-# Aggressive compression: only ONE image lives in history at a time but
-# keeping it small leaves room for system prompt + text context.
-# 400x225 q=28 on a real desktop produces ~500-800 tokens (measured).
+# For Groq (multimodal): 400×225 q=28 keeps image tokens ~500-800.
+# For local text-only models: the image is never sent to the LLM — only the
+# moondream description is — so compression still happens but only for moondream.
 _AGENT_MAX_WIDTH = 400
 _AGENT_MAX_HEIGHT = 225
 _AGENT_JPEG_QUALITY = 28
@@ -108,19 +110,6 @@ def _cleanup_expired() -> None:
         del _sessions[sid]
         logger.debug("Agent session expired and removed: %s", sid)
 
-
-# ── Groq client ───────────────────────────────────────────────────────────────
-# max_retries=1: the default is 2 retries with an 11s wait each — that's 22s
-# added to every 429, which blows ngrok's 30s free-tier timeout.
-# With max_retries=1 the SDK waits once (~4s backoff) then gives up.
-# The route-level error handler returns a clean 502 so the overlay can retry.
-
-_groq_client = AsyncOpenAI(
-    api_key=settings.groq_api_key,
-    base_url="https://api.groq.com/openai/v1",
-    max_retries=1,
-    timeout=20.0,  # hard cap — ensures response fits within ngrok's 30s window
-)
 
 # ── Image compression ─────────────────────────────────────────────────────────
 
@@ -236,8 +225,50 @@ WHEN TO GIVE UP (return goal_achieved=true with a helpful spoken_reply):
 
 
 def _strip_thinking(raw: str) -> str:
-    """Remove Qwen3 <think>...</think> blocks before JSON parsing."""
+    """Remove Qwen3/phi3 <think>...</think> blocks before JSON parsing."""
     return re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
+
+def _extract_json(raw: str) -> str:
+    """Extract the JSON object from a model response.
+
+    Handles all the ways small models misbehave:
+      - Bare JSON (correct)                         → returned as-is
+      - ```json ... ``` fences (phi3, qwen2.5)      → fences stripped
+      - ``` ... ``` fences (no language tag)        → fences stripped
+      - Leading/trailing prose around the JSON      → first {...} extracted
+      - <think>...</think> blocks (Qwen3)           → stripped first
+
+    Args:
+        raw: Raw model output string.
+
+    Returns:
+        The extracted JSON string, ready for ``json.loads``.
+
+    Raises:
+        ValueError: If no JSON object can be found.
+    """
+    text = _strip_thinking(raw).strip()
+
+    # 1. Strip any markdown code fence (```json ... ``` or ``` ... ```)
+    #    Use a regex so we handle multi-line fences reliably.
+    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    # 2. If the text doesn't start with { try to pull out the first {...} block.
+    #    Some models prefix with prose like "Here is the JSON:".
+    if not text.startswith("{"):
+        brace_match = re.search(r"\{.*\}", text, re.DOTALL)
+        if brace_match:
+            text = brace_match.group(0)
+
+    # 3. Fix common numeric typos from small models: 00.12 → 0.12
+    text = re.sub(r"\b0+(\d+\.\d+)", r"\1", text)
+    # Leading zeros on integer part: 00.5 → 0.5, 01.0 → 1.0
+    text = re.sub(r'(?<!["\w])0+(\d)', r"\1", text)
+
+    return text
 
 
 def _parse_agent_response(raw: str) -> dict[str, Any]:
@@ -252,14 +283,8 @@ def _parse_agent_response(raw: str) -> dict[str, Any]:
     Raises:
         ValueError: If the response is not valid JSON or missing required fields.
     """
-    cleaned = _strip_thinking(raw)
-
-    # Strip accidental markdown fences
-    if cleaned.startswith("```"):
-        lines = cleaned.splitlines()
-        cleaned = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-
     try:
+        cleaned = _extract_json(raw)
         data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
         raise ValueError(f"Model returned invalid JSON: {raw[:200]}") from exc
@@ -301,6 +326,9 @@ def _screenshot_user_content(
 ) -> list[dict[str, Any]]:
     """Build a multimodal content block with an image + text.
 
+    Used in Groq (multimodal) mode only.  In local mode ``_describe_screen``
+    is called instead to get a text description from moondream.
+
     Args:
         compressed_b64: Plain base64 JPEG string (no data URI prefix).
         text_content: Text part of the user message.
@@ -315,6 +343,68 @@ def _screenshot_user_content(
         },
         {"type": "text", "text": text_content},
     ]
+
+
+async def _describe_screen(compressed_b64: str, goal: str) -> str:
+    """Ask the vision model (moondream) to describe the screen in text.
+
+    Used in local mode so the text-only reasoning LLM (phi3:mini / qwen2.5)
+    receives a description it can understand instead of a raw image it cannot.
+
+    The description includes:
+      - What application/window is currently in focus
+      - Key visible UI elements with approximate positions
+      - Any text content that is relevant to the user's goal
+
+    Args:
+        compressed_b64: Plain base64 JPEG of the current screen.
+        goal: The user's voice instruction — used to focus the description.
+
+    Returns:
+        A plain-text description of the screen, or a fallback string on error.
+    """
+    prompt = (
+        f"The user wants to: {goal}\n\n"
+        "Describe what you see on the screen in detail. Include:\n"
+        "1. What application/window is in focus\n"
+        "2. All visible UI elements (buttons, menus, text fields, icons) "
+        "with their approximate positions as fractions (e.g. top-left=0.0,0.0 "
+        "bottom-right=1.0,1.0)\n"
+        "3. Any relevant text content visible\n"
+        "4. What the user would need to click or interact with to achieve their goal\n"
+        "Be precise about coordinates — the reasoning model uses them to act."
+    )
+    try:
+        resp = await vision_client.chat.completions.create(
+            model=active_vision_model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{compressed_b64}"
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+            max_tokens=512,
+            temperature=0.1,
+        )
+        description = resp.choices[0].message.content or ""
+        logger.debug("Screen description from %s: %s", active_vision_model, description[:200])
+        return description
+    except Exception as exc:
+        logger.error("Vision model (%s) description failed: %s", active_vision_model, exc)
+        return "[screen description unavailable — proceed based on goal alone]"
+
+
+def _is_local_mode() -> bool:
+    """Return True when the local Ollama endpoint is configured."""
+    return bool(settings.local_llm_base_url.strip())
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -349,19 +439,29 @@ async def agent_start(
     compressed = _compress(screenshot_b64)
 
     # Initial user message — goal + first screenshot
+    # Local mode: ask moondream to describe the screen as text, then pass
+    # that description to the text-only reasoning model.
+    # Groq mode: pass image directly (multimodal supported).
+    if _is_local_mode():
+        screen_desc = await _describe_screen(compressed, transcript)
+        first_user_content: str | list[dict[str, Any]] = (
+            f"Goal (language: {language}): {transcript}\n\n"
+            f"Current screen:\n{screen_desc}\n\n"
+            "What is the first action to take?"
+        )
+    else:
+        first_user_content = _screenshot_user_content(
+            compressed,
+            (
+                f"Goal (language: {language}): {transcript}\n\n"
+                "This is the current state of the screen. "
+                "What is the first action to take?"
+            ),
+        )
+
     session.messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": _screenshot_user_content(
-                compressed,
-                (
-                    f"Goal (language: {language}): {transcript}\n\n"
-                    "This is the current state of the screen. "
-                    "What is the first action to take?"
-                ),
-            ),
-        },
+        {"role": "user", "content": first_user_content},
     ]
 
     return await _run_turn(session, tts_voice)
@@ -399,9 +499,9 @@ async def agent_turn(
 
     session.touch()
 
-    # ── Rate-limit guard — respect Groq's 30 RPM free-tier limit ─────────────
-    # If the frontend fires turns faster than MIN_TURN_INTERVAL_S, sleep the
-    # difference so we don't saturate the RPM bucket.
+    # ── Rate-limit guard — always enforce (reasoning is always Groq) ──────────
+    # In hybrid mode moondream handles vision locally but Groq still handles
+    # reasoning — so we must respect the 30 RPM cap on the llm_client calls.
     elapsed_since_last = time.monotonic() - session.last_turn_time
     if session.last_turn_time > 0 and elapsed_since_last < MIN_TURN_INTERVAL_S:
         wait = MIN_TURN_INTERVAL_S - elapsed_since_last
@@ -416,16 +516,22 @@ async def agent_turn(
     }.get(action_result, action_result)
 
     # Append feedback + new screenshot as the next user message
-    session.messages.append({
-        "role": "user",
-        "content": _screenshot_user_content(
+    if _is_local_mode():
+        screen_desc = await _describe_screen(compressed, session.goal)
+        turn_content: str | list[dict[str, Any]] = (
+            f"{result_label}. Current screen:\n{screen_desc}\n\n"
+            "What is the next action to take toward the goal?"
+        )
+    else:
+        turn_content = _screenshot_user_content(
             compressed,
             (
                 f"{result_label}. This is the screen now.\n"
                 "What is the next action to take toward the goal?"
             ),
-        ),
-    })
+        )
+
+    session.messages.append({"role": "user", "content": turn_content})
 
     return await _run_turn(session, tts_voice)
 
@@ -479,8 +585,8 @@ async def _run_turn(session: _Session, tts_voice: str) -> AgentResponse:
                 ),
             })
         try:
-            resp = await _groq_client.chat.completions.create(
-                model=settings.vision_model,
+            resp = await llm_client.chat.completions.create(
+                model=active_llm_model,
                 messages=session.messages,  # type: ignore[arg-type]
                 temperature=0.15,
                 max_tokens=1200,

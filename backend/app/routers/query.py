@@ -1,67 +1,65 @@
 """Query route — POST /api/v1/query.
 
-The main feature endpoint. Accepts audio + screenshot from Electron,
-runs Groq Whisper and HF AfriSpeech concurrently (fast), uploads to
-Sahara (fast, ~1-2 s), returns a response in ~10-15 s, then continues
-polling Sahara in a BackgroundTask that updates the query_logs row once
-the transcript arrives (2-3 min later).
+Main feature endpoint. Accepts audio + screenshot from Electron,
+transcribes with Groq Whisper (~1-2s), uploads to Sahara in parallel,
+runs the vision pipeline, returns guided steps + TTS in ~5-15s.
+
+The DB write and Sahara poll both run as background tasks after the
+response is already sent — nothing blocks the hot path except STT + vision + TTS.
 """
 
 import asyncio
 import logging
-import uuid
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 from app.auth import get_current_user
 from app.config import settings
 from app.db import AsyncSessionLocal, get_session
 from app.models.models import QueryLog, User, UserSettings
-from app.schemas.query import BenchmarkResult, QueryResponse
+from app.schemas.query import QueryResponse
 from app.schemas.users import VOICE_GENDER_MAP
 from app.services.audio import AudioConversionError, convert_to_wav
 from app.services.stt import _sahara_poll, run_stt
+from app.services.sahara_tts import SAHARA_VOICE_MAP, synthesise_sahara
 from app.services.tts import synthesise
-from app.services.vision import VisionParseError, run_vision
+from app.services.vision import VisionParseError, _compress_screenshot, run_vision
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-async def sahara_poll_and_update(file_id: str, log_id: uuid.UUID) -> None:
-    """Background task: poll Sahara until done, then write result to query_logs.
+async def _write_log_and_poll_sahara(
+    log_kwargs: dict[str, Any],
+    sahara_file_id: str | None,
+) -> None:
+    """Background task: write QueryLog to DB then optionally poll Sahara.
 
-    Runs after the HTTP response has been sent to the client.  Uses its own
-    database session (from ``AsyncSessionLocal``) because the request session
-    is already closed by the time this executes.
+    Runs entirely after the HTTP response has been sent — nothing in the
+    hot path waits for this.  Uses its own session from AsyncSessionLocal.
 
     Args:
-        file_id: Sahara file_id returned by the upload step.
-        log_id: Primary key of the QueryLog row to update.
+        log_kwargs: Keyword arguments passed directly to QueryLog().
+        sahara_file_id: Sahara file_id to poll; ``None`` skips polling.
     """
-    transcript, elapsed_ms = await _sahara_poll(file_id)
-
     async with AsyncSessionLocal() as session:
-        result = await session.execute(select(QueryLog).where(QueryLog.id == log_id))
-        log = result.scalar_one_or_none()
-        if log is None:
-            logger.error(
-                "sahara_poll_and_update: QueryLog %s not found — discarding result",
-                log_id,
-            )
-            return
-        log.transcript_sahara = transcript
-        log.sahara_latency_ms = elapsed_ms
+        log = QueryLog(**log_kwargs)
         session.add(log)
+        await session.flush()   # assign log.id before polling
+
+        if sahara_file_id:
+            # Poll Sahara in the same background coroutine so we can
+            # update the same row without a second DB round-trip.
+            transcript, elapsed_ms = await _sahara_poll(sahara_file_id)
+            log.transcript_sahara = transcript
+            log.sahara_latency_ms = elapsed_ms
+            session.add(log)
+
         await session.commit()
-        logger.info(
-            "Sahara result written to query_logs — log_id=%s elapsed=%dms",
-            log_id,
-            elapsed_ms,
-        )
+        logger.info("QueryLog written — id=%s  sahara=%s", log.id, bool(sahara_file_id))
 
 
 @router.post("", response_model=QueryResponse)
@@ -71,82 +69,64 @@ async def query(
     screenshot: str = Form(..., description="Base64-encoded PNG of the full screen"),
     language: str = Form(default="en-pidgin", description="Hover AI language code"),
     current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    _session: AsyncSession = Depends(get_session),  # kept to satisfy auth dependency chain
 ) -> QueryResponse:
-    """Run the full voice-to-beacon-steps pipeline with TTS response.
+    """Run the voice-to-guided-steps pipeline with TTS response.
 
-    Accepts a WebM audio recording and a base64 screenshot from the Electron
-    overlay.  Returns beacon steps and a base64 WAV in ~10-15 s.
+    Hot path (blocks until response is sent):
+        1. Load voice preference from DB (tiny, uses injected session).
+        2. Read audio + WAV conversion.
+        3. Groq Whisper + Sahara upload concurrently.
+        4. Vision pipeline (moondream → qwen2.5 or Groq fallback).
+        5. TTS.
+        6. Return response.
 
-    Pipeline (in-request, ~10-15 s):
-        1. Load user voice preference.
-        2. Read audio bytes.
-        3. Convert to WAV for Whisper engines.
-        4. Groq Whisper + HF AfriSpeech concurrently (asyncio.gather).
-        5. Sahara upload (fast, ~1-2 s) — returns file_id.
-        6. Pick primary transcript (Groq fallback → HF).
-        7. Vision LLM.
-        8. Insert QueryLog (transcript_sahara=None, sahara_latency_ms=None).
-        9. TTS + session.flush() concurrently.
-        10. Register background task to poll Sahara and update the log row.
-        11. Return QueryResponse.
-
-    Background task (~2-3 min after response):
-        sahara_poll_and_update — polls Sahara, writes transcript_sahara +
-        sahara_latency_ms back to query_logs.
-
-    Args:
-        background_tasks: FastAPI BackgroundTasks injected by the framework.
-        audio: Uploaded audio file from Electron's MediaRecorder (WebM/WAV).
-        screenshot: Base64-encoded PNG of the full screen at query time.
-        language: Hover AI language code (e.g. ``"en-pidgin"``).
-        current_user: Authenticated ``User`` injected by ``get_current_user``.
-        session: Async database session injected by ``get_session``.
-
-    Returns:
-        A ``QueryResponse`` with transcript, beacon steps, summary, base64
-        WAV speech audio, and benchmark latency data from Groq + HF engines.
-        The ``benchmark.sahara_ms`` field is ``None`` — it will be populated
-        in the database once the background task finishes.
+    Background (fires after response, non-blocking):
+        • Write QueryLog to DB.
+        • Poll Sahara → update QueryLog with African-language transcript.
 
     Raises:
-        HTTPException 422: If both fast engines returned empty transcripts.
-        HTTPException 502: If the vision LLM fails after retry.
+        HTTPException 422: Groq Whisper returned empty transcript.
+        HTTPException 502: Vision LLM failed after all retries.
     """
-    # ── 0. Load user's voice preference ──────────────────────────────────────
-    settings_result = await session.execute(
+    # ── 1. Load voice preference (one small DB read, reuses injected session) ─
+    from sqlmodel import select  # noqa: PLC0415
+    settings_result = await _session.execute(
         select(UserSettings).where(UserSettings.user_id == current_user.id)
     )
     user_settings = settings_result.scalar_one_or_none()
     voice_gender = getattr(user_settings, "voice_gender", "female") if user_settings else "female"
     tts_voice = VOICE_GENDER_MAP.get(voice_gender, "autumn")
 
-    # ── 1. Read audio bytes ───────────────────────────────────────────────────
+    # ── 2. Read audio + WAV conversion ───────────────────────────────────────
     audio_bytes = await audio.read()
-
-    # ── 2. Convert to WAV for Whisper engines ─────────────────────────────────
     try:
         wav_bytes = convert_to_wav(audio_bytes)
     except AudioConversionError as exc:
         logger.error("Audio conversion failed: %s", exc)
         wav_bytes = b""
 
-    # ── 3+4+5. STT — Groq + HF concurrent, then Sahara upload ────────────────
-    # run_stt returns immediately after the upload; the poll runs in background.
-    stt_result = await run_stt(audio_bytes, wav_bytes, language)
+    # ── 3. STT + screenshot compression concurrently ─────────────────────────
+    # _compress_screenshot is CPU-bound (PIL resize + JPEG encode, ~200-400ms).
+    # It only needs the screenshot — independent of WAV/audio — so we can run
+    # it in a thread executor while Groq Whisper is in-flight.
+    loop = asyncio.get_event_loop()
+    stt_result, compressed_b64 = await asyncio.gather(
+        run_stt(audio_bytes, wav_bytes, language),
+        loop.run_in_executor(None, _compress_screenshot, screenshot),
+    )
 
-    if not any([stt_result.transcript_whisper, stt_result.transcript_afrispeech]):
+    if not stt_result.transcript:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Speech recognition failed — both fast engines returned empty results.",
+            detail="Speech recognition failed — Groq Whisper returned an empty transcript.",
         )
 
-    # Groq is the primary fast transcript; fall back to HF if Groq failed
-    primary_transcript = stt_result.transcript_whisper or stt_result.transcript_afrispeech
-
-    # ── 6. Vision LLM ─────────────────────────────────────────────────────────
+    # ── 4. Vision pipeline ────────────────────────────────────────────────────
     try:
-        vision_result = await run_vision(screenshot, primary_transcript, language)
+        vision_result = await run_vision(
+            screenshot, stt_result.transcript, language, compressed_b64=compressed_b64
+        )
     except VisionParseError as exc:
         logger.error("Vision pipeline failed: %s", exc)
         raise HTTPException(
@@ -160,55 +140,43 @@ async def query(
             detail="Vision processing failed.",
         )
 
-    # ── 7. Build log row — Sahara fields are None until background task runs ──
+    # ── 5. TTS ────────────────────────────────────────────────────────────────
+    # Route: Sahara TTS for African languages (authentic voice), Groq Orpheus
+    # for English/French or when Sahara is disabled/fails.
+    speech_b64 = ""
+    if settings.tts_enabled:
+        use_sahara = settings.sahara_tts_enabled and language in SAHARA_VOICE_MAP
+        if use_sahara:
+            speech_b64, _ = await synthesise_sahara(
+                vision_result.summary, language, voice_gender=voice_gender
+            )
+            if not speech_b64:
+                # Sahara failed — fall back to Groq Orpheus
+                logger.warning("Sahara TTS failed for language=%s — falling back to Groq Orpheus", language)
+                speech_b64, _ = await synthesise(vision_result.summary, voice=tts_voice)
+        else:
+            speech_b64, _ = await synthesise(vision_result.summary, voice=tts_voice)
+
+    # ── 6. Return response (DB write happens after this) ─────────────────────
     steps_list = [s.model_dump() for s in vision_result.steps]
-    vision_dict = {"summary": vision_result.summary, "steps": steps_list}
-
-    log = QueryLog(
-        user_id=current_user.id,
-        language_used=language,
-        transcript_sahara=None,
-        sahara_latency_ms=None,
-        transcript_whisper=stt_result.transcript_whisper,
-        whisper_latency_ms=stt_result.whisper_latency_ms,
-        transcript_afrispeech=stt_result.transcript_afrispeech,
-        afrispeech_latency_ms=stt_result.afrispeech_latency_ms,
-        vision_response=vision_dict,  # type: ignore[arg-type]
-        beacon_steps=steps_list,      # type: ignore[arg-type]
-    )
-    session.add(log)
-
-    # ── 8. TTS + flush concurrently ───────────────────────────────────────────
-    async def _tts_disabled() -> tuple[str, int]:
-        return ("", 0)
-
-    tts_coro = synthesise(vision_result.summary, voice=tts_voice) if settings.tts_enabled else _tts_disabled()
-
-    (speech_b64, tts_ms), _ = await asyncio.gather(
-        tts_coro,
-        session.flush(),
+    background_tasks.add_task(
+        _write_log_and_poll_sahara,
+        {
+            "user_id": current_user.id,
+            "language_used": language,
+            "transcript_whisper": stt_result.transcript,
+            "whisper_latency_ms": stt_result.whisper_latency_ms,
+            "transcript_sahara": None,
+            "sahara_latency_ms": None,
+            "vision_response": {"summary": vision_result.summary, "steps": steps_list},
+            "beacon_steps": steps_list,
+        },
+        stt_result.sahara_file_id,
     )
 
-    # ── 9. Register Sahara background poll ────────────────────────────────────
-    if stt_result.sahara_file_id is not None:
-        background_tasks.add_task(
-            sahara_poll_and_update,
-            stt_result.sahara_file_id,
-            log.id,
-        )
-
-    # ── 10. Return response ───────────────────────────────────────────────────
     return QueryResponse(
-        transcript=primary_transcript,
+        transcript=stt_result.transcript,
         steps=vision_result.steps,
         summary=vision_result.summary,
         speech_b64=speech_b64,
-        benchmark=BenchmarkResult(
-            sahara_ms=None,
-            whisper_ms=stt_result.whisper_latency_ms,
-            afrispeech_ms=stt_result.afrispeech_latency_ms,
-            tts_ms=tts_ms,
-            transcript_whisper=stt_result.transcript_whisper,
-            transcript_afrispeech=stt_result.transcript_afrispeech,
-        ),
     )
