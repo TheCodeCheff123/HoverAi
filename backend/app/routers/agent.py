@@ -96,7 +96,7 @@ async def agent_start_route(
         wav_bytes = b""
 
     stt_result = await run_stt(audio_bytes, wav_bytes, language)
-    transcript = stt_result.transcript_whisper or stt_result.transcript_afrispeech
+    transcript = stt_result.transcript
 
     if not transcript.strip():
         raise HTTPException(

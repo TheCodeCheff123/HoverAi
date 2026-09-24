@@ -1,8 +1,10 @@
-"""Users routes — GET /api/v1/users/me, GET/PATCH /api/v1/users/me/settings."""
+"""Users routes — GET/PATCH /api/v1/users/me, GET/PATCH /api/v1/users/me/settings."""
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -14,6 +16,17 @@ from app.schemas.users import UserResponse, UserSettingsResponse, UserSettingsUp
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class UserProfileUpdate(BaseModel):
+    """Partial update body for PATCH /users/me.
+
+    Attributes:
+        language: Hover AI language code (e.g. ``"en-pidgin"``, ``"yo"``).
+            Controls STT language hint, vision response language, and TTS voice.
+    """
+
+    language: Optional[str] = None
 
 
 @router.get("/me", response_model=UserResponse)
@@ -31,6 +44,54 @@ async def get_me(current_user: User = Depends(get_current_user)) -> UserResponse
         email=current_user.email,
         full_name=current_user.full_name,
         language=current_user.language,
+    )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def patch_me(
+    body: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    """Update the authenticated user's profile fields.
+
+    Currently supports updating ``language`` only.  Other profile fields
+    (``full_name``, ``email``) are not patchable through this endpoint.
+
+    Args:
+        body: Partial profile update — only non-None fields are applied.
+        current_user: ``User`` instance injected by ``get_current_user``.
+        session: Async database session injected by ``get_session``.
+
+    Returns:
+        The updated ``UserResponse``.
+
+    Raises:
+        HTTPException 400: If no fields are provided.
+    """
+    updates = body.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields provided to update.",
+        )
+
+    result = await session.execute(select(User).where(User.id == current_user.id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+
+    for field, value in updates.items():
+        setattr(user, field, value)
+
+    session.add(user)
+    await session.flush()
+    await session.refresh(user)
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        language=user.language,
     )
 
 

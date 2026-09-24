@@ -40,30 +40,21 @@ CREATE TABLE IF NOT EXISTS user_settings (
 
 
 -- ── query_logs ────────────────────────────────────────────────────────────────
--- Every POST /query call inserts one row.
--- Three STT transcripts + latencies are the hackathon benchmark dataset.
+-- Every POST /query call inserts one row (as a background task after the
+-- response has already been sent to the client).
 -- vision_response stores the raw LLM JSON; beacon_steps stores the parsed steps.
 
 CREATE TABLE IF NOT EXISTS query_logs (
-    id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id               UUID        REFERENCES users(id) ON DELETE SET NULL,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    language_used         TEXT        NOT NULL,
-    audio_duration_ms     INTEGER,
+    id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id            UUID        REFERENCES users(id) ON DELETE SET NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    language_used      TEXT        NOT NULL,
 
-    -- Intron Sahara (primary STT — used downstream for vision)
-    transcript_sahara     TEXT,
-    sahara_latency_ms     INTEGER,
-
-    -- Groq whisper-large-v3-turbo (benchmark #2)
-    transcript_whisper    TEXT,
-    whisper_latency_ms    INTEGER,
-
-    -- HuggingFace intronhealth/afrispeech-whisper-medium-all (benchmark #3)
-    transcript_afrispeech TEXT,
-    afrispeech_latency_ms INTEGER,
+    -- Groq Whisper STT
+    transcript_whisper TEXT,
+    whisper_latency_ms INTEGER,
 
     -- Vision LLM output
-    vision_response       JSONB,  -- raw model response for later inspection
-    beacon_steps          JSONB   -- parsed BeaconStep[] sent to Electron
+    vision_response    JSONB,  -- raw model response for later inspection
+    beacon_steps       JSONB   -- parsed BeaconStep[] sent to Electron
 );

@@ -144,6 +144,51 @@ _LANGUAGE_CONFIGS: dict[str, tuple[str, str, str]] = {
         "Write ALL text in clear, warm, natural English.",
         "I can see your Excel spreadsheet! Here's how to do it.",
     ),
+    "af": (
+        "Afrikaans",
+        "Write ALL text in clear, natural Afrikaans. Technical terms (Excel, button, menu, click) may remain in English.",
+        "Ek kan jou Excel-sigblad sien! Hier is hoe om dit te doen.",
+    ),
+    "am": (
+        "Amharic",
+        "Write ALL text in clear, natural Amharic. Technical terms (Excel, button, menu, click) may remain in English.",
+        "የእርስዎን Excel ሰነድ አይቻለሁ! እንዴት ማድረግ እንደሚቻል ላሳይዎ።",
+    ),
+    "rw": (
+        "Kinyarwanda",
+        "Write ALL text in clear, natural Kinyarwanda. Technical terms may remain in English.",
+        "Mbona inyandiko yawe ya Excel! Reka ngereranye uburyo bwo kubikora.",
+    ),
+    "lg": (
+        "Luganda",
+        "Write ALL text in clear, natural Luganda. Technical terms may remain in English.",
+        "Nlaba ssitaamu lyo lya Excel! Ka nkulagirire engeri gy'okolera.",
+    ),
+    "om": (
+        "Oromo",
+        "Write ALL text in clear, natural Oromo. Technical terms may remain in English.",
+        "Sanadii Excel kee arga! Akkaataa raawwachuu agarsiisaaf.",
+    ),
+    "sn": (
+        "Shona",
+        "Write ALL text in clear, natural Shona. Technical terms may remain in English.",
+        "Ndinoona spreadsheet yako yeExcel! Rega ndikuratidze kuitora.",
+    ),
+    "sw": (
+        "Swahili",
+        "Write ALL text in clear, natural Swahili. Technical terms may remain in English.",
+        "Naona lahajedwali lako la Excel! Hebu nikuonyeshe jinsi ya kuifanya.",
+    ),
+    "wo": (
+        "Wolof",
+        "Write ALL text in clear, natural Wolof. Technical terms may remain in English.",
+        "Maa ngi gis sa feyil Excel bi! Dem na naa la jox jëfandikoo bi.",
+    ),
+    "zu": (
+        "Zulu",
+        "Write ALL text in clear, natural Zulu. Technical terms may remain in English.",
+        "Ngibona iSpredishithi yakho ye-Excel! Ake ngikukhombise ukuthi yenziwa kanjani.",
+    ),
 }
 
 _DEFAULT_LANGUAGE_CONFIG = _LANGUAGE_CONFIGS["en"]
@@ -308,6 +353,8 @@ async def _groq_vision(
     image_data_uri: str,
     transcript: str,
     language: str,
+    history: list[dict] | None = None,
+    rolling_summary: str | None = None,
 ) -> VisionResult:
     """Single-step Groq vision: image + transcript → JSON steps directly.
 
@@ -318,6 +365,11 @@ async def _groq_vision(
         image_data_uri: ``data:image/jpeg;base64,...`` URI of the compressed screenshot.
         transcript: User's voice instruction.
         language: Hover AI language code.
+        history: Recent conversation turns as ``[{"role": ..., "content": ...}]``.
+            Text-only — screenshots from prior turns are never included.
+            Injected between the system prompt and the current user turn.
+        rolling_summary: Compressed summary of older turns beyond the live window.
+            Injected as a second system message when present.
 
     Returns:
         Parsed ``VisionResult``.
@@ -336,10 +388,19 @@ async def _groq_vision(
             ),
         },
     ]
+
+    # Build message list: system → optional summary → prior turns → current turn
     messages: list[dict] = [
         {"role": "system", "content": _build_system_prompt(language)},
-        {"role": "user", "content": user_content},
     ]
+    if rolling_summary:
+        messages.append({
+            "role": "system",
+            "content": f"Earlier in this conversation: {rolling_summary}",
+        })
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_content})
     for attempt in range(2):
         if attempt == 1:
             messages.append({
@@ -492,6 +553,8 @@ async def run_vision(
     transcript: str,
     language: str,
     compressed_b64: str | None = None,
+    history: list[dict] | None = None,
+    rolling_summary: str | None = None,
 ) -> VisionResult:
     """Generate guided step-by-step instructions from a screenshot + voice transcript.
 
@@ -507,6 +570,9 @@ async def run_vision(
         compressed_b64: Pre-compressed base64 JPEG from a parallel compression
             task. When provided, the internal ``_compress_screenshot`` call is
             skipped entirely, saving ~200-400ms.
+        history: Recent conversation turns as ``[{"role": ..., "content": ...}]``.
+            Text-only — screenshots from prior turns are never included.
+        rolling_summary: Compressed summary of older turns beyond the live window.
 
     Returns:
         A ``VisionResult`` with ordered ``BeaconStep`` instructions and a summary.
@@ -525,8 +591,12 @@ async def run_vision(
             active_vision_model,
             settings.local_llm_model,
         )
+        # History injected via Groq fallback path; local step gets transcript only
         return await _local_two_step_vision(image_data_uri, transcript, language)
 
-    # Groq-only: single multimodal call
+    # Groq-only: single multimodal call with conversation history
     logger.info("Vision: Groq-only pipeline (%s)", settings.vision_model)
-    return await _groq_vision(image_data_uri, transcript, language)
+    return await _groq_vision(
+        image_data_uri, transcript, language,
+        history=history, rolling_summary=rolling_summary,
+    )

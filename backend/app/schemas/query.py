@@ -17,9 +17,12 @@ class QueryResponse(BaseModel):
                     Source depends on language: Sahara TTS for African languages
                     (en-pidgin, yo, ha, ig), Groq Orpheus for en/fr.
                     Empty string if TTS is disabled or all providers failed.
+        conversation_id: UUID of the user's conversation. Carry this in the
+                         Electron UI to display or reference chat history later.
     """
 
     transcript: str
     steps: list[BeaconStep]
     summary: str
     speech_b64: str
+    conversation_id: str

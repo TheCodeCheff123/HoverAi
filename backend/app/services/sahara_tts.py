@@ -3,16 +3,25 @@
 Uses Intron Sahara's queue API (enqueue + poll + download) to synthesise
 speech in African languages and accents that Groq Orpheus cannot produce.
 
-Confirmed working combinations (verified against live API):
-  voice_language  voice_accent  Notes
-  ─────────────────────────────────────────────────────
-  pcm             pidgin        Nigerian Pidgin — best for en-pidgin users
-  en              yoruba        English with Yoruba accent
-  en              igbo          English with Igbo accent
-  en              hausa         English with Hausa accent
-  yo              yoruba        Native Yoruba
-  ig              igbo          Native Igbo
-  ha              hausa         Native Hausa
+Confirmed voice map (verified against Sahara /tts/v1/voices endpoint):
+  Hover code  voice_language  voice_accent   Language
+  ──────────────────────────────────────────────────────────
+  en-pidgin   pcm             pidgin         Nigerian Pidgin
+  yo          yo              yoruba         Yoruba
+  ha          ha              hausa          Hausa
+  ig          ig              igbo           Igbo
+  af          af              afrikaans      Afrikaans
+  am          am              amharic        Amharic
+  rw          rw              kinyarwanda    Kinyarwanda
+  lg          lg              luganda        Luganda
+  om          om              oromo          Oromo
+  sn          sn              shona          Shona
+  sw          sw              swahili        Swahili
+  wo          wo              wolof          Wolof
+  zu          en              zulu           Zulu (no native TTS — English voice + Zulu accent)
+
+Note: "en" and "fr" are not in SAHARA_VOICE_MAP — they fall through to
+Groq Orpheus TTS which is faster and higher quality for those languages.
 
 Pipeline:
   1. POST /tts/v1/enqueue  → text_id  (~1-2s)
@@ -43,6 +52,15 @@ SAHARA_VOICE_MAP: dict[str, tuple[str, str]] = {
     "yo":        ("yo",  "yoruba"),
     "ha":        ("ha",  "hausa"),
     "ig":        ("ig",  "igbo"),
+    "af":        ("af",  "afrikaans"),
+    "am":        ("am",  "amharic"),
+    "rw":        ("rw",  "kinyarwanda"),
+    "lg":        ("lg",  "luganda"),
+    "om":        ("om",  "oromo"),
+    "sn":        ("sn",  "shona"),
+    "sw":        ("sw",  "swahili"),
+    "wo":        ("wo",  "wolof"),
+    "zu":        ("en",  "zulu"),   # no native zu TTS — English voice + Zulu accent
 }
 
 # Maximum seconds to wait for Sahara TTS to finish processing.

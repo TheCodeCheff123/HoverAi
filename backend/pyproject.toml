@@ -28,6 +28,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.52",
     "sqlmodel>=0.0.42",
     "uvicorn[standard]>=0.52.4",
+    "websockets>=17.1",
 ]
 
 [project.scripts]

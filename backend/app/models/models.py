@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from sqlalchemy import JSON
+from sqlalchemy import JSON, Boolean
 from sqlmodel import Column, DateTime, Field, Relationship, SQLModel, func, text
 
 if TYPE_CHECKING:
@@ -143,26 +143,17 @@ class RefreshToken(SQLModel, table=True):
 
 
 class QueryLog(SQLModel, table=True):
-    """Benchmark log entry written by every POST /api/v1/query call.
-
-    Stores the transcript and latency from all three STT engines so the
-    hackathon benchmark report can be generated from the database without
-    re-running inference.
+    """Log entry written by every POST /api/v1/query call.
 
     Attributes:
         id: UUID primary key.
         user_id: FK to users.id (nullable — set NULL if user is deleted).
         created_at: UTC timestamp of the query.
         language_used: Hover AI language code used for this query.
-        audio_duration_ms: Duration of the audio clip in milliseconds.
-        transcript_sahara: Intron Sahara primary transcript.
-        sahara_latency_ms: Sahara end-to-end latency (upload + polling).
-        transcript_whisper: Groq whisper-large-v3-turbo transcript.
-        whisper_latency_ms: Groq Whisper round-trip latency.
-        transcript_afrispeech: HF afrispeech-whisper-medium-all transcript.
-        afrispeech_latency_ms: HF AfriSpeech round-trip latency.
-        vision_response: Raw vision LLM JSON response (stored as text).
-        beacon_steps: Parsed BeaconStep list JSON (stored as text).
+        transcript_whisper: Groq Whisper transcript.
+        whisper_latency_ms: Groq Whisper round-trip latency in ms.
+        vision_response: Raw vision LLM JSON response.
+        beacon_steps: Parsed BeaconStep list JSON.
     """
 
     __tablename__ = "query_logs"  # type: ignore[assignment]
@@ -178,19 +169,10 @@ class QueryLog(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
     )
     language_used: str = Field(max_length=20)
-    audio_duration_ms: Optional[int] = Field(default=None)
 
-    # Intron Sahara — primary STT
-    transcript_sahara: Optional[str] = Field(default=None)
-    sahara_latency_ms: Optional[int] = Field(default=None)
-
-    # Groq whisper-large-v3-turbo — benchmark #2
+    # Groq Whisper STT
     transcript_whisper: Optional[str] = Field(default=None)
     whisper_latency_ms: Optional[int] = Field(default=None)
-
-    # HuggingFace afrispeech-whisper-medium-all — benchmark #3
-    transcript_afrispeech: Optional[str] = Field(default=None)
-    afrispeech_latency_ms: Optional[int] = Field(default=None)
 
     # Vision LLM output — stored as JSONB in PostgreSQL (text in SQLite tests)
     vision_response: Optional[str] = Field(
@@ -201,3 +183,83 @@ class QueryLog(SQLModel, table=True):
     )
 
     user: Optional[User] = Relationship(back_populates="query_logs")
+
+
+class Conversation(SQLModel, table=True):
+    """One conversation per user — persists across sessions.
+
+    A new logical session starts automatically when the rolling summary
+    fires (every CONVERSATION_WINDOW turns). The full message history is
+    always kept in conversation_messages; only un-summarised rows are fed
+    to the LLM context window.
+
+    Attributes:
+        id: UUID primary key.
+        user_id: FK to users.id — one conversation per user.
+        created_at: When the conversation was first created.
+        updated_at: Bumped on every new message (used for ordering).
+        rolling_summary: Latest compressed summary of old turns.
+            Injected as a system message before the live window.
+            None until the first summarisation fires.
+    """
+
+    __tablename__ = "conversations"  # type: ignore[assignment]
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        primary_key=True,
+        sa_column_kwargs={"server_default": text("gen_random_uuid()")},
+    )
+    user_id: uuid.UUID = Field(foreign_key="users.id", unique=True, index=True)
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(
+            DateTime(timezone=True),
+            server_default=func.now(),
+            onupdate=func.now(),
+            nullable=False,
+        ),
+    )
+    rolling_summary: Optional[str] = Field(default=None)
+
+    messages: list["ConversationMessage"] = Relationship(back_populates="conversation")
+
+
+class ConversationMessage(SQLModel, table=True):
+    """A single turn stored in a conversation.
+
+    Attributes:
+        id: UUID primary key.
+        conversation_id: FK to conversations.id.
+        role: ``"user"`` or ``"assistant"``.
+        content: Transcript (user) or summary text (assistant).
+        created_at: Insertion timestamp — used for ordering.
+        summarised: True once this row has been folded into the rolling
+            summary. Summarised rows are excluded from the LLM context
+            window but are never deleted (kept for audit / history UI).
+    """
+
+    __tablename__ = "conversation_messages"  # type: ignore[assignment]
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        primary_key=True,
+        sa_column_kwargs={"server_default": text("gen_random_uuid()")},
+    )
+    conversation_id: uuid.UUID = Field(foreign_key="conversations.id", index=True)
+    role: str = Field(max_length=20)        # "user" | "assistant"
+    content: str
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False),
+    )
+    summarised: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default="false"),
+    )
+
+    conversation: Optional[Conversation] = Relationship(back_populates="messages")

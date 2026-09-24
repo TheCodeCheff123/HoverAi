@@ -1,34 +1,36 @@
-"""Speech-to-text pipeline — three concurrent engines.
+"""Speech-to-text pipeline.
 
-Runs Groq Whisper (benchmark #2) and HuggingFace AfriSpeech Whisper
-(benchmark #3) concurrently in-request using asyncio.gather.
+Default engine: Groq Whisper (``whisper-large-v3``).
+Fast (~1-2 s), supports English and major African languages via auto-detection.
 
-Intron Sahara (primary) is split into two steps so the route returns
-fast (~10-15 s) rather than blocking for the 2-3 min Sahara poll:
+Optional Sahara streaming mode (``sahara_stt_stream_enabled=True``):
+  Uses the Intron Sahara WebSocket streaming STT for African-language requests.
+  Falls back to Groq Whisper automatically if the stream returns empty.
 
-  _sahara_upload  -- uploads audio, returns file_id in ~1-2 s.
-                     Called inside the request before the response.
-  _sahara_poll    -- polls until FILE_TRANSCRIBED (2-3 min).
-                     Called by a FastAPI BackgroundTask after the
-                     response is already sent to the client.
+Language code mapping — confirmed against Sahara /stt/v1/languages endpoint:
 
-Language code mapping (confirmed from https://docs.voice.intron.io):
-
-  Hover AI code  |  Sahara / Intron  |  Notes
-  en-pidgin      |  pcm              |  Nigerian Pidgin
-  yo             |  yo               |  Yoruba-English
-  ha             |  ha               |  Hausa-English
-  ig             |  ig               |  Igbo-English
-  fr             |  fr               |  French
-  en             |  en               |  English
+  Hover AI code  |  Sahara STT  |  Language
+  ───────────────────────────────────────────────────────
+  en             |  en          |  English
+  en-pidgin      |  pcm         |  Nigerian Pidgin Creole
+  yo             |  yo          |  Yoruba
+  ha             |  ha          |  Hausa
+  ig             |  ig          |  Igbo
+  af             |  af          |  Afrikaans
+  am             |  am          |  Amharic
+  rw             |  rw          |  Kinyarwanda
+  lg             |  lg          |  Luganda
+  om             |  om          |  Oromo
+  sn             |  sn          |  Shona
+  sw             |  sw          |  Swahili
+  wo             |  wo          |  Wolof
+  zu             |  zu          |  Zulu (STT only — TTS uses en+zulu accent)
 """
 
 import asyncio
-import io
 import logging
 import time
 
-import httpx
 from openai import AsyncOpenAI
 
 from app.config import settings
@@ -36,15 +38,23 @@ from app.schemas.stt import STTResult
 
 logger = logging.getLogger(__name__)
 
-# Maps Hover AI language codes → Intron Sahara language codes
-# Codes confirmed from https://docs.voice.intron.io
+# Maps Hover AI language codes → Intron Sahara STT language codes.
+# Confirmed against the Sahara /stt/v1/languages endpoint.
 LANGUAGE_MAP: dict[str, str] = {
-    "en-pidgin": "pcm",  # Nigerian Pidgin Creole — code-switched
-    "yo": "yo",          # Yoruba-English — code-switched
-    "ha": "ha",          # Hausa-English — code-switched
-    "ig": "ig",          # Igbo-English — code-switched
-    "fr": "fr",          # French
-    "en": "en",          # English
+    "en":        "en",   # English
+    "en-pidgin": "pcm",  # Nigerian Pidgin Creole
+    "yo":        "yo",   # Yoruba
+    "ha":        "ha",   # Hausa
+    "ig":        "ig",   # Igbo
+    "af":        "af",   # Afrikaans
+    "am":        "am",   # Amharic
+    "rw":        "rw",   # Kinyarwanda
+    "lg":        "lg",   # Luganda
+    "om":        "om",   # Oromo
+    "sn":        "sn",   # Shona
+    "sw":        "sw",   # Swahili
+    "wo":        "wo",   # Wolof
+    "zu":        "zu",   # Zulu — STT only; TTS falls back to en+zulu accent
 }
 
 # Groq OpenAI-compatible client — shared across requests (thread-safe)
@@ -73,144 +83,20 @@ def _sahara_language(hover_lang: str) -> str:
     return LANGUAGE_MAP.get(hover_lang, "en")
 
 
-async def _sahara_upload(audio_bytes: bytes, language: str) -> tuple[str | None, int]:
-    """Upload audio to Intron Sahara and return the file_id (fast step).
-
-    Only performs the upload — does not poll. Completes in ~1-2 s so it
-    can run inside the request/response cycle without blocking the client.
-
-    WebM is submitted directly — no format conversion needed for Sahara.
-
-    Args:
-        audio_bytes: Raw audio bytes (WebM or any Sahara-supported format).
-        language: Hover AI language code (mapped to Sahara code internally).
-
-    Returns:
-        A tuple of ``(file_id, elapsed_ms)``.  ``file_id`` is ``None`` when
-        the upload fails so the caller can skip the background poll.
-    """
-    start = time.monotonic()
-    sahara_lang = _sahara_language(language)
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            upload_resp = await client.post(
-                f"{settings.intron_stt_base_url}/file/v1/upload",
-                headers={"Authorization": f"Bearer {settings.intron_api_key}"},
-                files={"audio_file_blob": ("audio.webm", audio_bytes, "audio/webm")},
-                data={
-                    "audio_file_name": "hover_query",
-                    "use_language_asr_input": sahara_lang,
-                },
-            )
-            upload_resp.raise_for_status()
-            upload_data = upload_resp.json()
-
-            if upload_data.get("status") != "Ok":
-                logger.error("Sahara upload failed: %s", upload_data)
-                return (None, int((time.monotonic() - start) * 1000))
-
-            file_id: str = upload_data["data"]["file_id"]
-            elapsed = int((time.monotonic() - start) * 1000)
-            logger.debug("Sahara upload OK in %dms — file_id: %s", elapsed, file_id)
-            return (file_id, elapsed)
-
-    except Exception as exc:
-        elapsed = int((time.monotonic() - start) * 1000)
-        logger.error("Sahara upload error: %s", exc, exc_info=True)
-        return (None, elapsed)
-
-
-async def _sahara_poll(file_id: str) -> tuple[str, int]:
-    """Poll Intron Sahara until transcription completes (slow step).
-
-    Runs as a FastAPI BackgroundTask after the HTTP response has already
-    been returned to the client.  Polls every
-    ``settings.sahara_poll_interval_s`` seconds for up to
-    ``settings.sahara_poll_timeout_s`` seconds.
-
-    Args:
-        file_id: The Sahara ``file_id`` returned by ``_sahara_upload``.
-
-    Returns:
-        A tuple of ``(transcript, elapsed_ms)``.  ``transcript`` is an
-        empty string when the job fails or times out.
-    """
-    start = time.monotonic()
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            deadline = time.monotonic() + settings.sahara_poll_timeout_s
-
-            while time.monotonic() < deadline:
-                await asyncio.sleep(settings.sahara_poll_interval_s)
-
-                status_resp = await client.get(
-                    f"{settings.intron_stt_base_url}/file/v1/status/{file_id}",
-                    headers={"Authorization": f"Bearer {settings.intron_api_key}"},
-                )
-                status_resp.raise_for_status()
-                status_data = status_resp.json()
-                job_status: str = status_data.get("data", {}).get("status", "")
-
-                logger.debug(
-                    "Sahara poll — file_id: %s status: %s",
-                    file_id,
-                    job_status,
-                )
-
-                if job_status == "FILE_TRANSCRIBED":
-                    data = status_data.get("data", {})
-                    # Confirm the exact field name once tested with a real API key.
-                    # Common candidates: data.transcription | data.transcript | data.text
-                    transcript: str = (
-                        data.get("transcription")
-                        or data.get("transcript")
-                        or data.get("text")
-                        or ""
-                    )
-                    elapsed = int((time.monotonic() - start) * 1000)
-                    logger.info(
-                        "Sahara poll complete in %dms — file_id: %s",
-                        elapsed,
-                        file_id,
-                    )
-                    return (transcript, elapsed)
-
-                if job_status == "FILE_PROCESSING_FAILED":
-                    logger.error(
-                        "Sahara transcription failed — file_id=%s: %s",
-                        file_id,
-                        status_data,
-                    )
-                    return ("", int((time.monotonic() - start) * 1000))
-
-            # Timed out
-            logger.error(
-                "Sahara poll timed out after %.1fs — file_id=%s",
-                settings.sahara_poll_timeout_s,
-                file_id,
-            )
-            return ("", int((time.monotonic() - start) * 1000))
-
-    except Exception as exc:
-        elapsed = int((time.monotonic() - start) * 1000)
-        logger.error("Sahara poll error: %s", exc, exc_info=True)
-        return ("", elapsed)
-
-
 # ISO 639-1 codes that Groq Whisper explicitly supports.
-# African codes not in this set (ig, pcm) must be omitted — Whisper
-# auto-detects the language and handles them correctly without a hint.
+# Codes NOT in this set are omitted from the API call — Whisper auto-detects
+# them more accurately without a potentially wrong hint.
+# Confirmed supported: af, am, sw are valid Whisper language codes.
+# rw, lg, om, sn, wo, zu, pcm are not — omit them (auto-detect works better).
 _GROQ_WHISPER_SUPPORTED: frozenset[str] = frozenset([
     "en", "fr", "de", "es", "pt", "it", "nl", "pl", "ru", "zh",
     "ja", "ko", "ar", "hi", "bn", "ur", "fa", "tr", "vi", "th",
-    "id", "ms", "yo", "ha",
+    "id", "ms", "yo", "ha", "af", "am", "sw",
 ])
 
 
 async def _call_groq_whisper(wav_bytes: bytes, language: str) -> tuple[str, int]:
-    """Transcribe audio using Groq Whisper (benchmark #2).
+    """Transcribe audio using Groq Whisper.
 
     Uses Groq's OpenAI-compatible API endpoint. The audio must be in WAV
     format — convert from WebM first using ``audio.convert_to_wav()``.
@@ -256,88 +142,39 @@ async def _call_groq_whisper(wav_bytes: bytes, language: str) -> tuple[str, int]
         return ("", elapsed)
 
 
-# Hard cap on HF inference — free-tier cold starts can take 20-40 s.
-# If HF hasn't responded within this budget the result is discarded and
-# an empty transcript is returned so the rest of the pipeline isn't gated.
-_HF_TIMEOUT_S: float = 8.0
-
-
-async def _call_hf_afrispeech(wav_bytes: bytes, language: str) -> tuple[str, int]:  # noqa: ARG001
-    """Transcribe audio using HuggingFace Inference API (benchmark #3).
-
-    Calls the HuggingFace free serverless Inference API for the model
-    configured in ``settings.hf_asr_model`` (default: ``openai/whisper-large-v3``).
-
-    The call is capped at ``_HF_TIMEOUT_S`` seconds.  HF free-tier models
-    cold-start in 20–40 s which would gate the entire pipeline.  Since Groq
-    Whisper already provides the primary transcript, HF is benchmark-only and
-    an empty result on timeout is acceptable.
-
-    Args:
-        wav_bytes: WAV audio bytes at 16 kHz mono (output of convert_to_wav).
-        language: Hover AI language code (unused — Whisper auto-detects language).
-
-    Returns:
-        A tuple of ``(transcript, elapsed_ms)``.
-        Returns ``("", elapsed_ms)`` on timeout or any failure.
-    """
-    start = time.monotonic()
-    url = f"https://router.huggingface.co/hf-inference/models/{settings.hf_asr_model}"
-
-    try:
-        async with httpx.AsyncClient(timeout=_HF_TIMEOUT_S) as client:
-            response = await client.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {settings.hf_api_key}",
-                    "Content-Type": "audio/wav",
-                },
-                content=wav_bytes,
-            )
-            response.raise_for_status()
-            data = response.json()
-            transcript: str = data.get("text", "")
-            elapsed = int((time.monotonic() - start) * 1000)
-            logger.info("HF AfriSpeech transcription complete in %dms", elapsed)
-            return (transcript, elapsed)
-    except httpx.TimeoutException:
-        elapsed = int((time.monotonic() - start) * 1000)
-        logger.warning("HF AfriSpeech timed out after %.1fs — skipping benchmark", _HF_TIMEOUT_S)
-        return ("", elapsed)
-    except Exception as exc:
-        elapsed = int((time.monotonic() - start) * 1000)
-        logger.error("HF AfriSpeech STT error: %s", exc, exc_info=True)
-        return ("", elapsed)
-
-
 async def run_stt(audio_bytes: bytes, wav_bytes: bytes, language: str) -> STTResult:
-    """Run Groq Whisper in-request and kick off Sahara upload concurrently.
+    """Transcribe audio using Groq Whisper, or Sahara streaming if enabled.
 
-    Groq Whisper (~1-2s) drives the live response immediately.
-    Sahara upload (~1-2s) fires in parallel — the returned file_id is passed
-    to a background task that polls until the African-language transcript is
-    ready (~2-3 min) and writes it to the DB for the hackathon benchmark record.
+    **Default mode** (``sahara_stt_stream_enabled=False``):
+      Groq Whisper only — fast (~1-2s), no Sahara upload or polling.
 
-    HuggingFace AfriSpeech has been removed — it used the same Whisper model
-    as Groq but was slower and added no value over the Groq result.
+    **Sahara streaming mode** (``sahara_stt_stream_enabled=True``):
+      Sahara WebSocket streaming STT for African-language requests
+      (en-pidgin, yo, ha, ig) with automatic Groq Whisper fallback.
+      Requires ``websockets`` and streaming STT access on the Intron account.
 
     Args:
-        audio_bytes: Raw WebM bytes — sent directly to Sahara (no conversion).
+        audio_bytes: Raw WebM bytes — used by Sahara streaming if enabled.
         wav_bytes: WAV bytes at 16 kHz mono — used by Groq Whisper.
         language: Hover AI language code (e.g. ``"en-pidgin"``).
 
     Returns:
-        An ``STTResult`` with the Groq Whisper transcript ready for immediate
-        use, and a ``sahara_file_id`` for the background poll task.
+        An ``STTResult`` with the transcript ready for immediate use.
     """
-    # Run Groq Whisper and Sahara upload concurrently — both finish in ~1-2s
-    (whisper_text, whisper_ms), (file_id, _) = await asyncio.gather(
-        _call_groq_whisper(wav_bytes, language),
-        _sahara_upload(audio_bytes, language),
-    )
+    # Sahara streaming path — only when explicitly enabled
+    _SAHARA_STREAM_LANGS = {"en-pidgin", "yo", "ha", "ig"}
+    if settings.sahara_stt_stream_enabled and language in _SAHARA_STREAM_LANGS:
+        from app.services.sahara_stt_stream import stream_transcribe  # noqa: PLC0415
+        stream_text, stream_ms = await stream_transcribe(audio_bytes, language)
+        if stream_text:
+            logger.info("Sahara stream STT succeeded (%dms)", stream_ms)
+            return STTResult(transcript=stream_text, whisper_latency_ms=stream_ms)
+        # Streaming returned empty — fall back to Groq Whisper
+        logger.warning(
+            "Sahara stream STT returned empty for language=%s — falling back to Groq Whisper",
+            language,
+        )
 
-    return STTResult(
-        transcript=whisper_text,
-        whisper_latency_ms=whisper_ms,
-        sahara_file_id=file_id,
-    )
+    # Default: Groq Whisper only
+    whisper_text, whisper_ms = await _call_groq_whisper(wav_bytes, language)
+    return STTResult(transcript=whisper_text, whisper_latency_ms=whisper_ms)
