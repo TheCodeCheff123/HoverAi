@@ -63,6 +63,29 @@ export type UserSettingsResponse = {
 
 export type UserSettingsUpdate = Partial<UserSettingsResponse>
 
+export type ConversationMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+}
+
+export type ConversationDay = {
+  date: string          // "2025-01-15"
+  messages: ConversationMessage[]
+}
+
+export type ConversationHistory = {
+  conversation_id: string
+  days: ConversationDay[]
+}
+
+export type Language = {
+  code: string
+  label: string
+  default: boolean
+}
+
 export type SignupPayload = {
   email: string
   full_name: string
@@ -205,6 +228,18 @@ async function patchServerSettings(patch: UserSettingsUpdate): Promise<UserSetti
   })
 }
 
+// ─── Conversation history ──────────────────────────────────────────────────────
+
+async function getHistory(): Promise<ConversationHistory> {
+  return request<ConversationHistory>('/conversations/history')
+}
+
+// ─── Languages ────────────────────────────────────────────────────────────────
+
+async function getLanguages(): Promise<Language[]> {
+  return request<Language[]>('/languages', { skipAuth: true })
+}
+
 // ─── Exported API object ──────────────────────────────────────────────────────
 
 export const api = {
@@ -215,4 +250,6 @@ export const api = {
   patchMe,
   getServerSettings,
   patchServerSettings,
+  getHistory,
+  getLanguages,
 }
