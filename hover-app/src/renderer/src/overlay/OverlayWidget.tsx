@@ -35,6 +35,10 @@ export default function OverlayWidget() {
   const audioChunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
 
+  // When the user hits "Ask another", we take a fresh screenshot and stash it
+  // here so submitQuery can send it instead of the original lastScreenshot.
+  const freshScreenshotRef = useRef<string | null>(null)
+
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -75,13 +79,44 @@ export default function OverlayWidget() {
   const dismiss = useCallback(() => {
     setState({ kind: 'idle' })
     stopRecording().catch(() => {})
+    // Tell main to hide the window and unblock the screen.
+    // Without this the BrowserWindow stays shown and intercepts input.
+    window.api.dismissOverlay()
   }, [stopRecording])
 
   const submitQuery = useCallback(async () => {
     setState({ kind: 'loading' })
     const audioBytes = await stopRecording()
-    window.api.captureDone({ audioData: Array.from(audioBytes) })
+    // If the user asked a follow-up, send the fresh screenshot via a dedicated
+    // IPC field so the main process doesn't re-use the original capture.
+    if (freshScreenshotRef.current) {
+      window.api.captureDoneWithScreenshot({
+        audioData: Array.from(audioBytes),
+        screenshotDataUrl: freshScreenshotRef.current,
+      })
+      freshScreenshotRef.current = null
+    } else {
+      window.api.captureDone({ audioData: Array.from(audioBytes) })
+    }
   }, [stopRecording])
+
+  // ── "Ask another question" from the steps panel ───────────────────────────
+  const askAnother = useCallback(async () => {
+    playChime()
+    // Take a fresh screenshot of the current screen state before the recording
+    // widget appears (overlay is already visible so we capture behind it).
+    try {
+      const dataUrl = await window.api.takeScreenshot()
+      freshScreenshotRef.current = `data:image/png;base64,${dataUrl}`
+    } catch {
+      freshScreenshotRef.current = null
+    }
+    await startRecording()
+    setState({ kind: 'recording', stream: streamRef.current })
+    // Ask main to focus the overlay window so Space/Enter/Esc land here.
+    // The overlay is already visible — this just transfers keyboard focus.
+    window.api.focusOverlay()
+  }, [startRecording])
 
   // ── capture-start / capture-end ──────────────────────────────────────────
   useEffect(() => {
@@ -143,6 +178,7 @@ export default function OverlayWidget() {
           pos={panelPos}
           setPos={setPanelPos}
           onDismiss={dismiss}
+          onAskAnother={askAnother}
         />
       )}
 
@@ -282,12 +318,13 @@ function LoadingBar() {
 
 // ─── Steps panel — draggable, position persisted across queries ───────────────
 
-function StepsPanel({ resp, panelWidth, pos, setPos, onDismiss }: {
+function StepsPanel({ resp, panelWidth, pos, setPos, onDismiss, onAskAnother }: {
   resp: QueryResponse
   panelWidth: number
   pos: { x: number; y: number } | null
   setPos: (p: { x: number; y: number }) => void
   onDismiss: () => void
+  onAskAnother: () => void
 }) {
   // On first mount (or if pos was never set), anchor to right edge, vertically centred.
   // We do this in a layout effect so it runs before paint.
@@ -355,7 +392,19 @@ function StepsPanel({ resp, panelWidth, pos, setPos, onDismiss }: {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {resp.steps.map((step) => <StepCard key={step.step} step={step} />)}
               </div>
-              <p style={{ margin: '16px 0 0', fontSize: 11, color: '#444', textAlign: 'center' }}>
+              {/* Ask another question — stays in the same overlay, no hide/show */}
+              <button
+                onClick={onAskAnother}
+                style={{
+                  marginTop: 16, width: '100%', padding: '10px 0',
+                  borderRadius: 999, border: 'none', background: '#6c63ff',
+                  color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  letterSpacing: '0.01em',
+                }}
+              >
+                🎙 Ask another question
+              </button>
+              <p style={{ margin: '10px 0 0', fontSize: 11, color: '#444', textAlign: 'center' }}>
                 Press <Kbd>Esc</Kbd> or click × to dismiss
               </p>
             </div>

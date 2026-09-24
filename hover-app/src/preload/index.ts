@@ -1,6 +1,6 @@
 import { contextBridge, shell, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { CaptureDonePayload, QueryResponse } from './index.d'
+import type { CaptureDonePayload, CaptureDoneWithScreenshotPayload, QueryResponse } from './index.d'
 
 // Custom APIs for renderer
 const api = {
@@ -40,6 +40,10 @@ const api = {
     return () => ipcRenderer.off('capture-end', handler)
   },
   captureDone: (result: CaptureDonePayload) => ipcRenderer.send('capture-done', result),
+  captureDoneWithScreenshot: (result: CaptureDoneWithScreenshotPayload) =>
+    ipcRenderer.send('capture-done-with-screenshot', result),
+  focusOverlay: () => ipcRenderer.send('focus-overlay'),
+  dismissOverlay: () => ipcRenderer.send('dismiss-overlay'),
   takeScreenshot: (): Promise<string> => ipcRenderer.invoke('take-screenshot'),
 
   // ── Query pipeline push results ─────────────────────────────────────────────

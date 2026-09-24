@@ -335,13 +335,13 @@ async function triggerCapture(): Promise<void> {
   win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height })
 
   const sendCapture = () => {
-    // Show the overlay for the recording widget.
-    // Do NOT call win.focus() — that steals OS focus from the target app,
-    // meaning keyboard shortcuts the user tries after recording won't land there.
-    // The recording widget is interactive via pointer-events: auto in CSS alone.
+    // Focus the overlay so keyboard events (Space/Enter to submit, Esc to cancel)
+    // land in the renderer during recording. Focus is released back to the target
+    // app in endCapture() once the user submits or cancels.
     win.setIgnoreMouseEvents(false)
     win.setFocusable(true)
     win.showInactive()
+    win.focus()
     win.webContents.send('capture-start', dataUrl, activeShortcutKey)
     console.log('[capture] capture-start sent to renderer')
   }
@@ -425,8 +425,8 @@ async function runQueryPipeline(
 
   const screenshotB64 = nativeImage.createFromDataURL(screenshotDataUrl).toPNG().toString('base64')
   const audioBuffer = Buffer.from(audioData)
-  const language = loadSettings().language
 
+  // Language is read from the user's profile server-side — no need to send it here.
   const boundary = `----HoverAIBoundary${Date.now()}`
   const crlf = '\r\n'
   const parts: Buffer[] = []
@@ -440,9 +440,6 @@ async function runQueryPipeline(
   parts.push(Buffer.from(crlf))
   parts.push(Buffer.from(
     `--${boundary}${crlf}Content-Disposition: form-data; name="screenshot"${crlf}${crlf}${screenshotB64}${crlf}`
-  ))
-  parts.push(Buffer.from(
-    `--${boundary}${crlf}Content-Disposition: form-data; name="language"${crlf}${crlf}${language}${crlf}`
   ))
   parts.push(Buffer.from(`--${boundary}--${crlf}`))
 
@@ -458,32 +455,49 @@ async function runQueryPipeline(
     if (!resp.ok) {
       const err = await resp.text().catch(() => `HTTP ${resp.status}`)
       console.error('[query] error:', err)
+      // Make overlay interactive so the error card's dismiss button is clickable
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.setIgnoreMouseEvents(false)
+        overlayWindow.setFocusable(false)
+        overlayWindow.showInactive()
+      }
       overlayWindow?.webContents.send('query-error', `Query failed: ${err}`)
       return
     }
     const queryResp = await resp.json() as QueryResponse
     console.log(`[query] got ${queryResp.steps.length} steps`)
 
-    // Steps panel is interactive (draggable) — enable mouse events so the user
-    // can click and drag the panel. The panel itself is 320px wide; the rest of
-    // the transparent overlay still passes clicks through via the OS hit-test
-    // because those pixels are fully transparent and Electron skips them.
+    // Steps panel state:
+    // - setIgnoreMouseEvents(false)  → overlay receives pointer events normally
+    // - setFocusable(false)          → overlay can never receive keyboard focus,
+    //                                  so clicking the panel never steals focus
+    //                                  from the target app (Word, browser, etc.)
+    // - CSS pointer-events: none on the root wrapper means transparent areas
+    //   don't consume clicks — they fall through to the window below via the OS.
+    //   Only the panel (pointer-events: auto) intercepts events.
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.setIgnoreMouseEvents(false)
-      overlayWindow.setFocusable(true)
+      overlayWindow.setFocusable(false)
       overlayWindow.showInactive()
     }
     overlayWindow?.webContents.send('query-result', queryResp)
   } catch (err) {
     console.error('[query] fetch error:', err)
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.setIgnoreMouseEvents(false)
+      overlayWindow.setFocusable(false)
+      overlayWindow.showInactive()
+    }
     overlayWindow?.webContents.send('query-error', 'Network error — check backend is running.')
   }
 }
 
 function endCapture(): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
-  // While waiting for the query result the overlay is non-interactive.
-  // Once query-result arrives we re-enable mouse events for the draggable panel.
+  // Blur the overlay so the OS returns focus to whichever app was active before
+  // the user pressed the shortcut. This must happen before the query runs so the
+  // target app has focus while the steps panel is showing.
+  overlayWindow.blur()
   overlayWindow.setIgnoreMouseEvents(true, { forward: true })
   overlayWindow.setFocusable(false)
   overlayWindow.webContents.send('capture-end')
@@ -571,6 +585,38 @@ ipcMain.on(
     runQueryPipeline(payload.audioData, lastScreenshot).catch(console.error)
   },
 )
+
+// Renderer signals a follow-up query with a freshly taken screenshot
+// (used by "Ask another question" — overlay stays visible, no hide/show cycle)
+ipcMain.on(
+  'capture-done-with-screenshot',
+  (_event, payload: { audioData: number[]; screenshotDataUrl: string }) => {
+    // Don't call endCapture() — transition straight to loading state.
+    overlayWindow?.setIgnoreMouseEvents(true, { forward: true })
+    overlayWindow?.setFocusable(false)
+    runQueryPipeline(payload.audioData, payload.screenshotDataUrl).catch(console.error)
+  },
+)
+
+// Renderer requests keyboard focus for the overlay (used by askAnother so
+// Space/Enter work without the user having to click into the widget first)
+ipcMain.on('focus-overlay', () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.setIgnoreMouseEvents(false)
+    overlayWindow.setFocusable(true)
+    overlayWindow.focus()
+  }
+})
+
+// Renderer dismissed the panel (× button / Esc) — hide the window entirely
+// and reset ignore/focus state so nothing blocks the user's screen.
+ipcMain.on('dismiss-overlay', () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.hide()
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    overlayWindow.setFocusable(false)
+  }
+})
 
 // Move the system mouse cursor to fractional screen coordinates
 ipcMain.on('move-mouse', (_event, x: number, y: number) => {

@@ -35,6 +35,11 @@ export type CaptureDonePayload = {
   audioData: number[]
 } | null
 
+export type CaptureDoneWithScreenshotPayload = {
+  audioData: number[]
+  screenshotDataUrl: string
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -61,6 +66,9 @@ declare global {
       onCaptureStart: (cb: (screenshotDataUrl: string, shortcutKey: string) => void) => () => void
       onCaptureEnd: (cb: () => void) => () => void
       captureDone: (result: CaptureDonePayload) => void
+      captureDoneWithScreenshot: (result: CaptureDoneWithScreenshotPayload) => void
+      focusOverlay: () => void
+      dismissOverlay: () => void
       // Query pipeline push results
       onQueryResult: (cb: (resp: QueryResponse) => void) => () => void
       onQueryError: (cb: (message: string) => void) => () => void
