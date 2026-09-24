@@ -1,18 +1,11 @@
 import { useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import type { Language as ApiLanguage } from '@renderer/lib/api'
 
-// ─── Shared language list — edit here to change options everywhere ────────────
+// ─── Language type ────────────────────────────────────────────────────────────
 
+/** A selectable language entry — `value` maps to the backend `code` field. */
 export type Language = { value: string; label: string }
-
-export const LANGUAGES: Language[] = [
-  { value: 'en-pidgin', label: 'English + pidgin' },
-  { value: 'en', label: 'English' },
-  { value: 'fr', label: 'French' },
-  { value: 'yo', label: 'Yoruba' },
-  { value: 'ha', label: 'Hausa' },
-  { value: 'ig', label: 'Igbo' },
-]
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -27,11 +20,20 @@ interface LangDropdownProps {
   onToggle: () => void
   /** Called when user picks a language */
   onSelect: (lang: Language) => void
+  /** List of available languages — fetched from GET /languages */
+  languages: Language[]
   /**
    * 'glass'  — auth page style: pill trigger, frosted-glass panel opening upward
    * 'solid'  — settings page style: rounded trigger, solid dark panel opening downward
    */
   variant?: 'glass' | 'solid'
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Convert a backend Language (code/label/default) to the dropdown's value/label shape. */
+export function toDropdownLanguage(l: ApiLanguage): Language {
+  return { value: l.code, label: l.label }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -41,10 +43,11 @@ export default function LangDropdown({
   open,
   onToggle,
   onSelect,
+  languages,
   variant = 'glass',
 }: LangDropdownProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const selected = LANGUAGES.find((l) => l.value === value) ?? LANGUAGES[0]
+  const selected = languages.find((l) => l.value === value) ?? languages[0]
 
   // Close on outside click
   useEffect(() => {
@@ -166,7 +169,7 @@ export default function LangDropdown({
               ...panelBackground,
             }}
           >
-            {LANGUAGES.map((l, i) => (
+            {languages.map((l, i) => (
               <button
                 key={l.value}
                 type="button"
@@ -185,7 +188,7 @@ export default function LangDropdown({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   borderBottom:
-                    i < LANGUAGES.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                    i < languages.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
                   transition: 'background 0.15s',
                 }}
                 onMouseEnter={(e) => {

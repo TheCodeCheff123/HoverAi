@@ -63,6 +63,29 @@ export type UserSettingsResponse = {
 
 export type UserSettingsUpdate = Partial<UserSettingsResponse>
 
+export type ConversationMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+}
+
+export type ConversationDay = {
+  date: string          // "2025-01-15"
+  messages: ConversationMessage[]
+}
+
+export type ConversationHistory = {
+  conversation_id: string
+  days: ConversationDay[]
+}
+
+export type Language = {
+  code: string
+  label: string
+  default: boolean
+}
+
 export type SignupPayload = {
   email: string
   full_name: string
@@ -140,18 +163,14 @@ async function parseResponse<T>(resp: Response): Promise<T> {
 }
 
 async function tryRefresh(): Promise<string | null> {
-  // We need the refresh token — but it's in safeStorage (main process only).
-  // We can't access it from the renderer. Instead we call an IPC bridge that
-  // does the refresh entirely in the main process and returns the new access token.
-  // For now, call the main process via the existing IPC pattern:
-  // The main process exposes `get-access-token` but the refresh must happen there too.
-  // We delegate: clear access token to signal main to refresh on next getAccessToken call.
-  // Instead we just return null here and let the main process handle refresh.
-  // The renderer-facing refresh is: renderer calls `window.api.getAccessToken()` —
-  // but main doesn't auto-refresh. So we surface a dedicated `refreshTokens` IPC.
-  // Since we didn't add one, we return null here and let AuthExpiredError surface.
-  // The full refresh path is handled in the main process query pipeline (ST4).
-  return null
+  // Delegates to main process via the refresh-tokens IPC channel.
+  // Main holds the refresh token in safeStorage and performs the actual
+  // /auth/refresh call, stores the new pair, and returns the new access token.
+  try {
+    return await window.api.refreshTokens()
+  } catch {
+    return null
+  }
 }
 
 // ─── Auth endpoints ───────────────────────────────────────────────────────────
@@ -209,6 +228,18 @@ async function patchServerSettings(patch: UserSettingsUpdate): Promise<UserSetti
   })
 }
 
+// ─── Conversation history ──────────────────────────────────────────────────────
+
+async function getHistory(): Promise<ConversationHistory> {
+  return request<ConversationHistory>('/conversations/history')
+}
+
+// ─── Languages ────────────────────────────────────────────────────────────────
+
+async function getLanguages(): Promise<Language[]> {
+  return request<Language[]>('/languages', { skipAuth: true })
+}
+
 // ─── Exported API object ──────────────────────────────────────────────────────
 
 export const api = {
@@ -219,4 +250,6 @@ export const api = {
   patchMe,
   getServerSettings,
   patchServerSettings,
+  getHistory,
+  getLanguages,
 }

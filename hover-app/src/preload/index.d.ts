@@ -16,31 +16,29 @@ export type AppSettings = {
 
 export type CaptureRegion = { x: number; y: number; w: number; h: number }
 
-export type AgentAction = {
-  action: 'click' | 'double_click' | 'right_click' | 'type' | 'key' | 'scroll'
+export type BeaconStep = {
+  step: number
   instruction: string
-  x: number
-  y: number
-  w: number
-  h: number
-  text?: string | null
-  keys?: string | null
-  direction?: 'up' | 'down' | null
-  amount?: number | null
+  keys: string | null
+  tip: string | null
 }
 
-export type AgentResponse = {
-  session_id: string
-  action: AgentAction | null
+export type QueryResponse = {
+  transcript: string
+  steps: BeaconStep[]
   summary: string
   speech_b64: string
-  done: boolean
-  turn: number
+  benchmark: Record<string, unknown>
 }
 
 export type CaptureDonePayload = {
   audioData: number[]
 } | null
+
+export type CaptureDoneWithScreenshotPayload = {
+  audioData: number[]
+  screenshotDataUrl: string
+}
 
 declare global {
   interface Window {
@@ -61,15 +59,19 @@ declare global {
       storeTokens: (access: string, refresh: string) => Promise<void>
       getAccessToken: () => Promise<string | null>
       clearTokens: () => Promise<void>
+      refreshTokens: () => Promise<string | null>
       moveMouse: (x: number, y: number) => void
       takeScreenshot: () => Promise<string>
-      // Push listeners — overlay subscribes to agent pipeline results
+      // Capture lifecycle
       onCaptureStart: (cb: (screenshotDataUrl: string, shortcutKey: string) => void) => () => void
       onCaptureEnd: (cb: () => void) => () => void
       captureDone: (result: CaptureDonePayload) => void
-      onAgentTurn: (cb: (resp: AgentResponse) => void) => () => void
-      onAgentDone: (cb: (resp: AgentResponse) => void) => () => void
-      onAgentError: (cb: (message: string) => void) => () => void
+      captureDoneWithScreenshot: (result: CaptureDoneWithScreenshotPayload) => void
+      focusOverlay: () => void
+      dismissOverlay: () => void
+      // Query pipeline push results
+      onQueryResult: (cb: (resp: QueryResponse) => void) => () => void
+      onQueryError: (cb: (message: string) => void) => () => void
     }
   }
 }
