@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import type { AppSettings } from '@renderer/../../src/preload/index.d'
-import LangDropdown from '@renderer/components/LangDropdown'
+import LangDropdown, { toDropdownLanguage, type Language } from '@renderer/components/LangDropdown'
 import { api, ApiError } from '@renderer/lib/api'
-import type { UserResponse } from '@renderer/lib/api'
+import type { UserResponse, ConversationHistory, ConversationDay, ConversationMessage } from '@renderer/lib/api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -42,9 +42,13 @@ function displayShortcut(acc: string): string {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+type Tab = 'settings' | 'history'
+
 export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('settings')
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [user, setUser] = useState<UserResponse | null>(null)
+  const [languages, setLanguages] = useState<Language[]>([])
   const [langOpen, setLangOpen] = useState(false)
   const [shortcutMode, setShortcutMode] = useState(false)
   const [shortcutCombo, setShortcutCombo] = useState('')
@@ -52,6 +56,13 @@ export default function SettingsPage() {
     'idle' | 'listening' | 'testing' | 'available' | 'taken'
   >('idle')
   const testingRef = useRef(false)
+
+  // Fetch available languages on mount — no auth required
+  useEffect(() => {
+    api.getLanguages().then((list) => {
+      setLanguages(list.map(toDropdownLanguage))
+    }).catch(() => {/* leave empty on error */})
+  }, [])
 
   // Load local settings + active shortcut + server user/settings on mount
   useEffect(() => {
@@ -183,9 +194,8 @@ export default function SettingsPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '24px 24px 20px',
+          padding: '24px 24px 0',
           flexShrink: 0,
-          // Makes the whole header draggable on macOS / Windows
           WebkitAppRegion: 'drag',
         } as React.CSSProperties}
       >
@@ -220,7 +230,40 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* ── Scrollable body ────────────────────────────────────────────── */}
+      {/* ── Tab bar ───────────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 4,
+          padding: '16px 16px 0',
+          flexShrink: 0,
+          WebkitAppRegion: 'no-drag',
+        } as React.CSSProperties}
+      >
+        {(['settings', 'history'] as Tab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              padding: '8px 18px',
+              borderRadius: 'var(--radius-full)',
+              border: 'none',
+              background: activeTab === tab ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
+              color: activeTab === tab ? '#fff' : 'var(--text-secondary)',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'background 0.15s, color 0.15s',
+              textTransform: 'capitalize',
+            }}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Settings tab ──────────────────────────────────────────────── */}
+      {activeTab === 'settings' && (
       <div
         style={{
           flex: 1,
@@ -243,6 +286,7 @@ export default function SettingsPage() {
               update('language', l.value)
               setLangOpen(false)
             }}
+            languages={languages}
             variant="solid"
           />
         </div>
@@ -469,6 +513,10 @@ export default function SettingsPage() {
           </div>
         </Card>
       </div>
+      )}
+
+      {/* ── History tab ───────────────────────────────────────────────── */}
+      {activeTab === 'history' && <HistoryPanel />}
     </div>
   )
 }
@@ -644,4 +692,109 @@ function Slider({
       />
     </div>
   )
+}
+
+// ─── History panel ────────────────────────────────────────────────────────────
+
+function HistoryPanel() {
+  const [history, setHistory] = useState<ConversationHistory | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+    api.getHistory()
+      .then((h) => { setHistory(h); setLoading(false) })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Failed to load history')
+        setLoading(false)
+      })
+  }, [])
+
+  if (loading) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <i className="ri-loader-4-line" style={{ fontSize: 24, color: 'var(--text-muted)', animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <p style={{ fontSize: 14, color: '#ef4444', textAlign: 'center' }}>{error}</p>
+      </div>
+    )
+  }
+
+  if (!history || history.days.length === 0) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 }}>
+        <i className="ri-chat-history-line" style={{ fontSize: 36, color: 'var(--text-muted)' }} />
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', lineHeight: 1.6, maxWidth: 260 }}>
+          No conversation history yet. Start using Hover to see your sessions here.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 16px 24px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {history.days.map((day) => <DayGroup key={day.date} day={day} />)}
+    </div>
+  )
+}
+
+function DayGroup({ day }: { day: ConversationDay }) {
+  const label = formatDayLabel(day.date)
+  return (
+    <div>
+      <SectionLabel>{label}</SectionLabel>
+      <Card>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {day.messages.map((msg) => <MessageRow key={msg.id} message={msg} />)}
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+function MessageRow({ message }: { message: ConversationMessage }) {
+  const isUser = message.role === 'user'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <span style={{
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        color: isUser ? 'var(--text-muted)' : 'var(--accent)',
+      }}>
+        {isUser ? 'You' : 'Hover'}
+      </span>
+      <p style={{
+        margin: 0,
+        fontSize: isUser ? 13 : 14,
+        color: isUser ? 'var(--text-secondary)' : 'var(--text-primary)',
+        lineHeight: 1.55,
+        fontWeight: isUser ? 400 : 500,
+      }}>
+        {message.content}
+      </p>
+    </div>
+  )
+}
+
+function formatDayLabel(dateStr: string): string {
+  // dateStr is "2025-01-15" UTC
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  const todayUtc = new Date()
+  const todayStr = `${todayUtc.getUTCFullYear()}-${String(todayUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(todayUtc.getUTCDate()).padStart(2, '0')}`
+  const yesterdayUtc = new Date(Date.UTC(todayUtc.getUTCFullYear(), todayUtc.getUTCMonth(), todayUtc.getUTCDate() - 1))
+  const yesterdayStr = `${yesterdayUtc.getUTCFullYear()}-${String(yesterdayUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(yesterdayUtc.getUTCDate()).padStart(2, '0')}`
+  if (dateStr === todayStr) return 'Today'
+  if (dateStr === yesterdayStr) return 'Yesterday'
+  return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
 }

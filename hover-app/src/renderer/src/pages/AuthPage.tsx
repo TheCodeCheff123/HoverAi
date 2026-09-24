@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import AuthPanel from '@renderer/components/AuthPanel'
-import LangDropdown, { LANGUAGES, type Language } from '@renderer/components/LangDropdown'
+import LangDropdown, { toDropdownLanguage, type Language } from '@renderer/components/LangDropdown'
 import { api, ApiError } from '@renderer/lib/api'
 
 type Tab = 'signin' | 'signup'
@@ -37,7 +37,21 @@ export default function AuthPage({ onComplete }: AuthPageProps) {
   const [prevTab, setPrevTab] = useState<Tab>('signin')
   const [showPassword, setShowPassword] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
-  const [lang, setLang] = useState<Language>(LANGUAGES[0])
+  const [languages, setLanguages] = useState<Language[]>([])
+  const [lang, setLang] = useState<Language | null>(null)
+
+  // Fetch available languages on mount — no auth required
+  useEffect(() => {
+    api.getLanguages().then((list) => {
+      const mapped = list.map(toDropdownLanguage)
+      setLanguages(mapped)
+      // Use the entry flagged as default; fall back to first
+      const defaultEntry = list.find((l) => l.default)
+      setLang(defaultEntry ? { value: defaultEntry.code, label: defaultEntry.label } : mapped[0] ?? null)
+    }).catch(() => {
+      // If the fetch fails, leave lists empty — the dropdown will render nothing
+    })
+  }, [])
 
   // Form fields
   const [fullName, setFullName] = useState('')
@@ -70,7 +84,7 @@ export default function AuthPage({ onComplete }: AuthPageProps) {
           email: email.trim(),
           full_name: fullName.trim(),
           password,
-          language: lang.value,
+          language: lang?.value,
           device_id: 'electron',
         })
       } else {
@@ -291,13 +305,14 @@ export default function AuthPage({ onComplete }: AuthPageProps) {
                       >
                         <Field label="Language preference">
                           <LangDropdown
-                            value={lang.value}
+                            value={lang?.value ?? ''}
                             open={langOpen}
                             onToggle={() => setLangOpen((v) => !v)}
                             onSelect={(l) => {
                               setLang(l)
                               setLangOpen(false)
                             }}
+                            languages={languages}
                             variant="glass"
                           />
                         </Field>

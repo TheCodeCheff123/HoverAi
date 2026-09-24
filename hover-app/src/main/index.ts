@@ -16,10 +16,6 @@ import {
 import { join } from 'path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { mouse, keyboard, straightTo, Point, Button, Key } from '@nut-tree-fork/nut-js'
-
-// Speed up mouse movement — default is very slow
-mouse.config.mouseSpeed = 1500
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 // VITE_API_BASE is injected by electron-vite's define at build time (from .env).
@@ -294,6 +290,16 @@ function getOrCreateOverlayWindow(): BrowserWindow {
 async function triggerCapture(): Promise<void> {
   console.log('[capture] shortcut fired')
 
+  // If steps panel is showing, pressing the shortcut again dismisses it
+  if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+    overlayWindow.hide()
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    overlayWindow.setFocusable(false)
+    overlayWindow.webContents.send('capture-end')  // tells renderer → idle
+    console.log('[capture] shortcut pressed again — dismissed steps panel')
+    return
+  }
+
   // Find the display the cursor is currently on
   const cursor = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursor)
@@ -313,13 +319,8 @@ async function triggerCapture(): Promise<void> {
 
   console.log('[capture] sources found:', sources.length, sources.map(s => s.name))
 
-  // Match the source whose bounds align with the target display
   const source =
-    sources.find((s) => {
-      // On multi-monitor setups the source id often contains the display index
-      // Fallback: just use the first source if only one screen
-      return sources.length === 1 || s.display_id === String(display.id)
-    }) ?? sources[0]
+    sources.find((s) => sources.length === 1 || s.display_id === String(display.id)) ?? sources[0]
 
   if (!source) {
     console.error('[capture] no source found')
@@ -331,11 +332,12 @@ async function triggerCapture(): Promise<void> {
   console.log('[capture] screenshot dataUrl length:', dataUrl.length)
 
   const win = getOrCreateOverlayWindow()
-
-  // Reposition to the correct display in case cursor moved since window creation
   win.setBounds({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height })
 
   const sendCapture = () => {
+    // Focus the overlay so keyboard events (Space/Enter to submit, Esc to cancel)
+    // land in the renderer during recording. Focus is released back to the target
+    // app in endCapture() once the user submits or cancels.
     win.setIgnoreMouseEvents(false)
     win.setFocusable(true)
     win.showInactive()
@@ -344,7 +346,6 @@ async function triggerCapture(): Promise<void> {
     console.log('[capture] capture-start sent to renderer')
   }
 
-  // If renderer isn't ready yet, wait for it
   if (overlayReady) {
     sendCapture()
   } else {
@@ -396,90 +397,36 @@ async function fetchWithAuth(
   return resp
 }
 
-// ─── Agent pipeline helpers ───────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * Parse a key combo string like "Ctrl+S", "Win+D", "Alt+F4" into nut-js Key values.
- * Falls back to an empty array if a token can't be resolved.
- */
-function parseKeys(combo: string): Key[] {
-  const map: Record<string, Key> = {
-    ctrl: Key.LeftControl, control: Key.LeftControl,
-    shift: Key.LeftShift,
-    alt: Key.LeftAlt,
-    win: Key.LeftWin, windows: Key.LeftWin, super: Key.LeftSuper, cmd: Key.LeftCmd,
-    tab: Key.Tab, enter: Key.Return, return: Key.Return,
-    backspace: Key.Backspace, delete: Key.Delete, escape: Key.Escape, esc: Key.Escape,
-    space: Key.Space, home: Key.Home, end: Key.End,
-    pageup: Key.PageUp, pagedown: Key.PageDown,
-    up: Key.Up, down: Key.Down, left: Key.Left, right: Key.Right,
-    f1: Key.F1, f2: Key.F2, f3: Key.F3, f4: Key.F4,
-    f5: Key.F5, f6: Key.F6, f7: Key.F7, f8: Key.F8,
-    f9: Key.F9, f10: Key.F10, f11: Key.F11, f12: Key.F12,
-  }
-  return combo.split('+').map((token) => {
-    const t = token.trim().toLowerCase()
-    if (map[t]) return map[t]
-    const upper = token.trim().toUpperCase()
-    if (upper in Key) return Key[upper as keyof typeof Key]
-    const num = `Num${upper}`
-    if (num in Key) return Key[num as keyof typeof Key]
-    console.warn(`[agent] unknown key token: "${token}"`)
-    return null
-  }).filter((k): k is Key => k !== null)
-}
-
-
-type AgentAction = {
-  action: 'click' | 'double_click' | 'right_click' | 'type' | 'key' | 'scroll'
+type BeaconStep = {
+  step: number
   instruction: string
-  x: number; y: number; w: number; h: number
-  text?: string | null
-  keys?: string | null
-  direction?: 'up' | 'down' | null
-  amount?: number | null
+  keys: string | null
+  tip: string | null
 }
 
-type AgentResponse = {
-  session_id: string
-  action: AgentAction | null
+type QueryResponse = {
+  transcript: string
+  steps: BeaconStep[]
   summary: string
   speech_b64: string
-  done: boolean
-  turn: number
+  benchmark: Record<string, unknown>
 }
 
-/** Take a fresh screenshot of the display under the cursor and return base64 PNG */
-async function captureScreenshot(): Promise<string> {
-  const cursor = screen.getCursorScreenPoint()
-  const display = screen.getDisplayNearestPoint(cursor)
-  const { bounds, scaleFactor } = display
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: {
-      width: Math.round(bounds.width * scaleFactor),
-      height: Math.round(bounds.height * scaleFactor),
-    },
-  })
-  const source = sources.find((s) =>
-    sources.length === 1 || s.display_id === String(display.id)
-  ) ?? sources[0]
-  if (!source) throw new Error('no screen source found')
-  return source.thumbnail.toPNG().toString('base64')
-}
+// ─── Query pipeline ───────────────────────────────────────────────────────────
 
-async function runAgentPipeline(
+async function runQueryPipeline(
   audioData: number[],
   screenshotDataUrl: string,
 ): Promise<void> {
-  console.log('[agent] starting pipeline')
+  console.log('[query] starting pipeline')
   if (!overlayWindow || overlayWindow.isDestroyed()) return
 
   const screenshotB64 = nativeImage.createFromDataURL(screenshotDataUrl).toPNG().toString('base64')
   const audioBuffer = Buffer.from(audioData)
-  const language = loadSettings().language
 
-  // ── Step 1: POST /agent/start with audio + screenshot + language ────────────
+  // Language is read from the user's profile server-side — no need to send it here.
   const boundary = `----HoverAIBoundary${Date.now()}`
   const crlf = '\r\n'
   const parts: Buffer[] = []
@@ -494,148 +441,63 @@ async function runAgentPipeline(
   parts.push(Buffer.from(
     `--${boundary}${crlf}Content-Disposition: form-data; name="screenshot"${crlf}${crlf}${screenshotB64}${crlf}`
   ))
-  parts.push(Buffer.from(
-    `--${boundary}${crlf}Content-Disposition: form-data; name="language"${crlf}${crlf}${language}${crlf}`
-  ))
   parts.push(Buffer.from(`--${boundary}--${crlf}`))
 
-  let agentResp: AgentResponse
   try {
-    const resp = await fetchWithAuth(`${API_BASE}/agent/start`, {
+    const resp = await fetchWithAuth(`${API_BASE}/query`, {
       method: 'POST',
-      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'ngrok-skip-browser-warning': 'true',
+      },
       body: Buffer.concat(parts),
     })
     if (!resp.ok) {
       const err = await resp.text().catch(() => `HTTP ${resp.status}`)
-      console.error('[agent] start error:', err)
-      overlayWindow?.webContents.send('agent-error', `Agent failed: ${err}`)
-      return
-    }
-    agentResp = await resp.json() as AgentResponse
-  } catch (err) {
-    console.error('[agent] start fetch error:', err)
-    overlayWindow?.webContents.send('agent-error', 'Network error — check backend is running.')
-    return
-  }
-
-  // ── Agent loop ──────────────────────────────────────────────────────────────
-  while (true) {
-    console.log(`[agent] turn ${agentResp.turn}, done=${agentResp.done}, action=${agentResp.action?.action ?? 'none'}`)
-
-    if (agentResp.done || !agentResp.action) {
-      // All done — send final response and break
-      overlayWindow?.webContents.send('agent-done', agentResp)
-      break
-    }
-
-    // Push this turn's action to the overlay so it can show the beacon
-    overlayWindow?.webContents.send('agent-turn', agentResp)
-
-    // Execute the action
-    let actionResult: 'success' | 'error' = 'success'
-    try {
-      await executeAction(agentResp.action)
-    } catch (err) {
-      console.error(`[agent] action failed:`, err)
-      actionResult = 'error'
-    }
-
-    // Wait 600ms for the OS to process the action
-    await new Promise<void>((r) => setTimeout(r, 600))
-
-    // Take a fresh screenshot to show the backend what changed
-    let newScreenshotB64: string
-    try {
-      newScreenshotB64 = await captureScreenshot()
-    } catch (err) {
-      console.error('[agent] screenshot failed:', err)
-      newScreenshotB64 = screenshotB64 // fallback to original
-    }
-
-    // POST /agent/turn — must be multipart/form-data, same as /agent/start
-    try {
-      const turnBoundary = `----HoverAIBoundary${Date.now()}`
-      const turnCrlf = '\r\n'
-      const turnParts: Buffer[] = []
-
-      turnParts.push(Buffer.from(
-        `--${turnBoundary}${turnCrlf}` +
-        `Content-Disposition: form-data; name="session_id"${turnCrlf}${turnCrlf}` +
-        `${agentResp.session_id}${turnCrlf}`
-      ))
-      turnParts.push(Buffer.from(
-        `--${turnBoundary}${turnCrlf}` +
-        `Content-Disposition: form-data; name="screenshot"${turnCrlf}${turnCrlf}` +
-        `${newScreenshotB64}${turnCrlf}`
-      ))
-      turnParts.push(Buffer.from(
-        `--${turnBoundary}${turnCrlf}` +
-        `Content-Disposition: form-data; name="action_result"${turnCrlf}${turnCrlf}` +
-        `${actionResult}${turnCrlf}`
-      ))
-      turnParts.push(Buffer.from(`--${turnBoundary}--${turnCrlf}`))
-
-      const resp = await fetchWithAuth(`${API_BASE}/agent/turn`, {
-        method: 'POST',
-        headers: { 'Content-Type': `multipart/form-data; boundary=${turnBoundary}` },
-        body: Buffer.concat(turnParts),
-      })
-      if (!resp.ok) {
-        const err = await resp.text().catch(() => `HTTP ${resp.status}`)
-        console.error('[agent] turn error:', err)
-        overlayWindow?.webContents.send('agent-error', `Agent turn failed: ${err}`)
-        return
+      console.error('[query] error:', err)
+      // Make overlay interactive so the error card's dismiss button is clickable
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.setIgnoreMouseEvents(false)
+        overlayWindow.setFocusable(false)
+        overlayWindow.showInactive()
       }
-      agentResp = await resp.json() as AgentResponse
-    } catch (err) {
-      console.error('[agent] turn fetch error:', err)
-      overlayWindow?.webContents.send('agent-error', 'Network error on agent turn.')
+      overlayWindow?.webContents.send('query-error', `Query failed: ${err}`)
       return
     }
-  }
-}
+    const queryResp = await resp.json() as QueryResponse
+    console.log(`[query] got ${queryResp.steps.length} steps`)
 
-/** Execute a single AgentAction using nut-js */
-async function executeAction(action: AgentAction): Promise<void> {
-  const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
-  const absX = Math.round(action.x * bounds.width) + bounds.x
-  const absY = Math.round(action.y * bounds.height) + bounds.y
-
-  console.log(`[agent] executing ${action.action} at (${absX}, ${absY})`)
-
-  switch (action.action) {
-    case 'click':
-      await mouse.move(straightTo(new Point(absX, absY)))
-      await mouse.leftClick()
-      break
-    case 'double_click':
-      await mouse.move(straightTo(new Point(absX, absY)))
-      await mouse.doubleClick(Button.LEFT)
-      break
-    case 'right_click':
-      await mouse.move(straightTo(new Point(absX, absY)))
-      await mouse.rightClick()
-      break
-    case 'type':
-      if (action.text) await keyboard.type(action.text)
-      break
-    case 'key': {
-      const keys = parseKeys(action.keys ?? '')
-      if (keys.length > 0) await keyboard.type(...keys)
-      break
+    // Steps panel state:
+    // - setIgnoreMouseEvents(false)  → overlay receives pointer events normally
+    // - setFocusable(false)          → overlay can never receive keyboard focus,
+    //                                  so clicking the panel never steals focus
+    //                                  from the target app (Word, browser, etc.)
+    // - CSS pointer-events: none on the root wrapper means transparent areas
+    //   don't consume clicks — they fall through to the window below via the OS.
+    //   Only the panel (pointer-events: auto) intercepts events.
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.setIgnoreMouseEvents(false)
+      overlayWindow.setFocusable(false)
+      overlayWindow.showInactive()
     }
-    case 'scroll':
-      await mouse.move(straightTo(new Point(absX, absY)))
-      if (action.direction === 'up') await mouse.scrollUp(action.amount ?? 3)
-      else await mouse.scrollDown(action.amount ?? 3)
-      break
+    overlayWindow?.webContents.send('query-result', queryResp)
+  } catch (err) {
+    console.error('[query] fetch error:', err)
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.setIgnoreMouseEvents(false)
+      overlayWindow.setFocusable(false)
+      overlayWindow.showInactive()
+    }
+    overlayWindow?.webContents.send('query-error', 'Network error — check backend is running.')
   }
 }
 
 function endCapture(): void {
   if (!overlayWindow || overlayWindow.isDestroyed()) return
-  overlayWindow.hide()
+  // Blur the overlay so the OS returns focus to whichever app was active before
+  // the user pressed the shortcut. This must happen before the query runs so the
+  // target app has focus while the steps panel is showing.
+  overlayWindow.blur()
   overlayWindow.setIgnoreMouseEvents(true, { forward: true })
   overlayWindow.setFocusable(false)
   overlayWindow.webContents.send('capture-end')
@@ -710,27 +572,80 @@ ipcMain.on('launch-overlay', () => {
   createTray(() => { /* no-op: overlay has no persistent visible state */ }, () => app.quit())
 })
 
-// Renderer signals capture is done — runs the agent pipeline
+// Renderer signals capture is done — runs the query pipeline
 ipcMain.on(
   'capture-done',
   (_event, payload: { audioData: number[] } | null) => {
     endCapture()
-    if (!payload) return
-    runAgentPipeline(payload.audioData, lastScreenshot).catch(console.error)
+    if (!payload) {
+      // Cancelled — hide overlay entirely
+      if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide()
+      return
+    }
+    runQueryPipeline(payload.audioData, lastScreenshot).catch(console.error)
   },
 )
+
+// Renderer signals a follow-up query with a freshly taken screenshot
+// (used by "Ask another question" — overlay stays visible, no hide/show cycle)
+ipcMain.on(
+  'capture-done-with-screenshot',
+  (_event, payload: { audioData: number[]; screenshotDataUrl: string }) => {
+    // Don't call endCapture() — transition straight to loading state.
+    overlayWindow?.setIgnoreMouseEvents(true, { forward: true })
+    overlayWindow?.setFocusable(false)
+    runQueryPipeline(payload.audioData, payload.screenshotDataUrl).catch(console.error)
+  },
+)
+
+// Renderer requests keyboard focus for the overlay (used by askAnother so
+// Space/Enter work without the user having to click into the widget first)
+ipcMain.on('focus-overlay', () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.setIgnoreMouseEvents(false)
+    overlayWindow.setFocusable(true)
+    overlayWindow.focus()
+  }
+})
+
+// Renderer dismissed the panel (× button / Esc) — hide the window entirely
+// and reset ignore/focus state so nothing blocks the user's screen.
+ipcMain.on('dismiss-overlay', () => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.hide()
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    overlayWindow.setFocusable(false)
+  }
+})
 
 // Move the system mouse cursor to fractional screen coordinates
 ipcMain.on('move-mouse', (_event, x: number, y: number) => {
   const { bounds } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const absX = Math.round(x * bounds.width) + bounds.x
   const absY = Math.round(y * bounds.height) + bounds.y
-  mouse.move(straightTo(new Point(absX, absY))).catch(console.error)
+  console.log(`[mouse] move to (${absX}, ${absY})`)
 })
 
-// Renderer can request a fresh screenshot (used for future assessment logic)
+// Renderer can request a fresh screenshot
 ipcMain.handle('take-screenshot', async () => {
-  return captureScreenshot().catch(() => '')
+  try {
+    const cursor = screen.getCursorScreenPoint()
+    const display = screen.getDisplayNearestPoint(cursor)
+    const { bounds, scaleFactor } = display
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: {
+        width: Math.round(bounds.width * scaleFactor),
+        height: Math.round(bounds.height * scaleFactor),
+      },
+    })
+    const source = sources.find((s) =>
+      sources.length === 1 || s.display_id === String(display.id)
+    ) ?? sources[0]
+    return source ? source.thumbnail.toPNG().toString('base64') : ''
+  } catch {
+    return ''
+  }
 })
 
 ipcMain.on('close-main-window', (event) => {
@@ -849,6 +764,10 @@ ipcMain.handle('get-access-token', (): string | null => {
 
 ipcMain.handle('clear-tokens', (): void => {
   clearTokens()
+})
+
+ipcMain.handle('refresh-tokens', async (): Promise<string | null> => {
+  return refreshAccessToken()
 })
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────

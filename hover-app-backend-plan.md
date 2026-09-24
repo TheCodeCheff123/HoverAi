@@ -427,7 +427,7 @@ benchmark             BenchmarkResult
 - `query-result` (main → overlay renderer): pushes QueryResponse beacon steps
 - `store-token` / `get-token` (renderer ↔ main): JWT via safeStorage.encryptString
 
-**Status** — `[ ] pending`
+**Status** — `[x] complete`
 
 ---
 
