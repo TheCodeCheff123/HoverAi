@@ -1,0 +1,12 @@
+/* Overlay-specific stylesheet — must NOT set any background color on body/html/root.
+   The overlay BrowserWindow is transparent; any opaque background kills that. */
+
+@import './base.css';
+@import 'tailwindcss';
+
+/* Override the body background set by base.css — keep the overlay fully transparent */
+html,
+body,
+#root {
+  background: transparent !important;
+}
