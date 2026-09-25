@@ -29,3 +29,5 @@ __pycache__
 .venv
 .pytest_cache
 .env
+data
+output
