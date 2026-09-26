@@ -5,6 +5,7 @@
 mod tokens;
 mod settings;
 mod http_client;
+mod wake_word;
 
 use std::sync::Mutex;
 use base64::Engine;
@@ -34,6 +35,8 @@ struct AppState {
     active_shortcut: Mutex<String>,
     last_screenshot: Mutex<String>,  // base64 PNG dataUrl
     http_client: Client,
+    /// When Some, the wake-word detector is running. Drop or send to stop it.
+    wake_word_stop: Mutex<Option<std::sync::mpsc::SyncSender<wake_word::StopSignal>>>,
 }
 
 // ─── Screenshots ──────────────────────────────────────────────────────────────
@@ -332,12 +335,41 @@ fn get_settings(app: AppHandle) -> settings::AppSettings {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, s: settings::AppSettings) {
+    let wake_enabled = s.wake_word_enabled;
     // launchAtLogin side effect
     #[cfg(target_os = "macos")]
     {
         // tauri-plugin-autostart handles this — the renderer calls the plugin directly
     }
     settings::save(&app, &s);
+    // Start or stop wake-word detector to match the new setting
+    apply_wake_word_setting(&app, wake_enabled);
+}
+
+/// Start the detector if `enabled` is true and it isn't running; stop it if false.
+fn apply_wake_word_setting(app: &AppHandle, enabled: bool) {
+    let state = app.state::<AppState>();
+    let mut guard = state.wake_word_stop.lock().unwrap();
+    if enabled {
+        if guard.is_none() {
+            let tx = wake_word::start(app.clone());
+            *guard = Some(tx);
+            println!("[wake-word] started");
+        }
+    } else {
+        // Dropping the sender signals the detector thread to stop.
+        *guard = None;
+        println!("[wake-word] stopped");
+    }
+}
+
+/// IPC command so the renderer can toggle wake-word without a full settings save.
+#[tauri::command]
+fn set_wake_word_enabled(app: AppHandle, enabled: bool) {
+    let mut s = settings::load(&app);
+    s.wake_word_enabled = enabled;
+    settings::save(&app, &s);
+    apply_wake_word_setting(&app, enabled);
 }
 
 #[tauri::command]
@@ -586,6 +618,7 @@ pub fn run() {
             active_shortcut: Mutex::new(String::new()),
             last_screenshot: Mutex::new(String::new()),
             http_client: Client::new(),
+            wake_word_stop: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             // Permissions
@@ -599,6 +632,7 @@ pub fn run() {
             get_settings,
             save_settings,
             get_active_shortcut,
+            set_wake_word_enabled,
             // Shortcuts
             test_shortcut,
             register_shortcut,
@@ -620,6 +654,11 @@ pub fn run() {
         .setup(|app| {
             setup_tray(app)?;
             restore_shortcut_on_startup(app);
+            // Start wake-word detector if it was enabled when the app last ran
+            let saved = settings::load(&app.handle());
+            if saved.wake_word_enabled {
+                apply_wake_word_setting(&app.handle().clone(), true);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
