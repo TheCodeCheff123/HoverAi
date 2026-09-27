@@ -92,7 +92,10 @@ export default function SettingsPage() {
           : {}),
       }
       setSettings(merged)
-      if (shortcut) setShortcutCombo(displayShortcut(shortcut))
+      // getActiveShortcut() returns '' if the async startup restore hasn't
+      // finished yet. Fall back to the persisted shortcutKey from settings.
+      const resolvedShortcut = shortcut || localSettings.shortcutKey
+      if (resolvedShortcut) setShortcutCombo(displayShortcut(resolvedShortcut))
       if (serverUser) setUser(serverUser)
     }).catch((err) => {
       // getSettings() or getActiveShortcut() invoke failed — use defaults so
