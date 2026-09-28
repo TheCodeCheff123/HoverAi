@@ -53,12 +53,12 @@ function toAccelerator(combo: string): string {
 export default function ShortcutPage({ onComplete }: ShortcutPageProps) {
   const [combo, setCombo] = useState('')
   const [status, setStatus] = useState<Status>('waiting')
-  // Map of accelerator → true (free) | false (taken) | undefined (not yet tested)
   const [suggestions, setSuggestions] = useState<Record<string, boolean>>({})
   const ease = [0.22, 1, 0.36, 1] as const
   const testingRef = useRef(false)
+  // Keep a stable ref to handleConfirm so the keydown listener can call it
+  const confirmRef = useRef<() => void>(() => {})
 
-  // Probe all suggestions on mount so user immediately sees what's free
   useEffect(() => {
     let cancelled = false
     async function probe() {
@@ -82,9 +82,14 @@ export default function ShortcutPage({ onComplete }: ShortcutPageProps) {
     testingRef.current = false
   }, [])
 
-  // Global keydown listener
+  // Global keydown: Enter confirms when available, all other combos are recorded
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        confirmRef.current()
+        return
+      }
       e.preventDefault()
       const formatted = formatCombo(e)
       if (!formatted) return
@@ -107,6 +112,9 @@ export default function ShortcutPage({ onComplete }: ShortcutPageProps) {
     }
   }
 
+  // Keep ref in sync so the keydown listener always calls the latest version
+  confirmRef.current = handleConfirm
+
   async function pickSuggestion(acc: string) {
     const display = acc.replace('CommandOrControl', 'Ctrl')
     setCombo(display)
@@ -123,7 +131,7 @@ export default function ShortcutPage({ onComplete }: ShortcutPageProps) {
   const statusText =
     status === 'waiting' ? 'Press any key combination, or pick a suggestion below'
     : status === 'testing' ? 'Checking…'
-    : status === 'available' ? '✓ Available — click Confirm to use it'
+    : status === 'available' ? '✓ Available — press Enter or click Confirm'
     : status === 'taken' ? '✗ Already grabbed by your system — try another'
     : '✓ Registered!'
 
@@ -144,8 +152,11 @@ export default function ShortcutPage({ onComplete }: ShortcutPageProps) {
         background: 'var(--bg)',
         gap: 32,
         overflowY: 'auto',
-      }}
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+      } as React.CSSProperties}
     >
+      <style>{`#shortcut-scroll::-webkit-scrollbar { display: none; }`}</style>
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
@@ -155,8 +166,9 @@ export default function ShortcutPage({ onComplete }: ShortcutPageProps) {
           Set your capture shortcut
         </h1>
         <p style={{ fontSize: 15, color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: 500 }}>
-          This is the key combo that freezes your screen for selection.
-          Press your preferred combination, or pick one that&apos;s free below.
+          Your shortcut is always the reliable fallback — it works even when the
+          wake word isn&apos;t heard or the mic is in use. Press any key combination,
+          or pick a free suggestion below.
         </p>
       </motion.div>
 

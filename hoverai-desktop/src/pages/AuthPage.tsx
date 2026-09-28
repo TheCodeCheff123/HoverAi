@@ -85,13 +85,13 @@ export default function AuthPage({ onComplete }: AuthPageProps) {
           full_name: fullName.trim(),
           password,
           language: lang?.value,
-          device_id: 'electron',
+          device_id: 'tauri',
         })
       } else {
         tokens = await api.signin({
           email: email.trim(),
           password,
-          device_id: 'electron',
+          device_id: 'tauri',
         })
       }
 
@@ -400,7 +400,7 @@ export default function AuthPage({ onComplete }: AuthPageProps) {
                     By continuing, you agree to Hover AI&apos;s{' '}
                     <span
                       className="terms-link"
-                      onClick={() => window.api.openExternal('https://google.com')}
+                      onClick={() => window.api.openExternal('https://hover-ai-iota.vercel.app/terms')}
                     >
                       Terms and Privacy Policy
                     </span>

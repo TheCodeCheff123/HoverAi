@@ -77,7 +77,6 @@ async fn refresh_token(app: &tauri::AppHandle, client: &Client) -> Option<String
     let resp = client
         .post(format!("{api_base}/auth/refresh"))
         .json(&RefreshBody { refresh_token: refresh })
-        .header("ngrok-skip-browser-warning", "true")
         .send()
         .await
         .ok()?;

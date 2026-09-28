@@ -12,8 +12,6 @@
 // Falls back to localhost for safety — override via hover-app/.env
 export const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000/api/v1'
 
-// Log once at module load so you can confirm the URL in DevTools console
-console.log('[api] API_BASE =', API_BASE)
 
 // ─── Error types ──────────────────────────────────────────────────────────────
 
@@ -110,8 +108,6 @@ async function request<T>(
 
   const headers: Record<string, string> = {
     ...(fetchOptions.headers as Record<string, string>),
-    // ngrok free tier shows a browser warning page unless this header is present
-    'ngrok-skip-browser-warning': 'true',
   }
 
   if (!skipAuth) {

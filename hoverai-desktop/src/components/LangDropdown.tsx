@@ -47,7 +47,7 @@ export default function LangDropdown({
   variant = 'glass',
 }: LangDropdownProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const selected = languages.find((l) => l.value === value) ?? languages[0]
+  const selected = languages.find((l) => l.value === value) ?? languages[0] ?? null
 
   // Close on outside click
   useEffect(() => {
@@ -137,8 +137,8 @@ export default function LangDropdown({
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
       {/* Trigger button */}
-      <button type="button" onClick={onToggle} style={triggerStyle}>
-        <span style={{ color: 'var(--text-primary)' }}>{selected.label}</span>
+      <button type="button" onClick={onToggle} style={triggerStyle} disabled={!selected}>
+        <span style={{ color: 'var(--text-primary)' }}>{selected?.label ?? '—'}</span>
         <motion.i
           className="ri-arrow-down-s-line"
           animate={{ rotate: open ? 180 : 0 }}

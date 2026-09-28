@@ -25,7 +25,7 @@ use std::{
 
 use cpal::{SampleFormat, traits::{DeviceTrait, HostTrait, StreamTrait}};
 use livekit_wakeword::wakeword::WakeWordModel;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -78,8 +78,10 @@ pub struct StopSignal;
 pub fn start(app: AppHandle) -> std::sync::mpsc::SyncSender<StopSignal> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<StopSignal>(1);
     std::thread::spawn(move || {
-        if let Err(e) = run_detector(app, rx) {
+        if let Err(e) = run_detector(app.clone(), rx) {
             eprintln!("[wake-word] detector error: {e}");
+            // Emit to all windows so the frontend can show a toast
+            let _ = app.emit("wake-word-error", e);
         }
         // Stream is dropped here → mic indicator extinguishes on Windows
         println!("[wake-word] microphone released");

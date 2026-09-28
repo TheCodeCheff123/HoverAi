@@ -4,6 +4,7 @@ import type { AppSettings } from '@renderer/lib/settings-types'
 import LangDropdown, { toDropdownLanguage, type Language } from '@renderer/components/LangDropdown'
 import { api, ApiError } from '@renderer/lib/api'
 import type { UserResponse, ConversationHistory, ConversationDay, ConversationMessage } from '@renderer/lib/api'
+import { onWakeWordError, setLaunchAtLogin } from '@renderer/lib/tauri-api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,17 @@ export default function SettingsPage() {
     'idle' | 'listening' | 'testing' | 'available' | 'taken'
   >('idle')
   const testingRef = useRef(false)
+  const [wakeWordError, setWakeWordError] = useState<string | null>(null)
+  const [autostartError, setAutostartError] = useState<string | null>(null)
+
+  // Subscribe to wake-word errors from Rust (mic permission denied, device missing, etc.)
+  useEffect(() => {
+    const unsub = onWakeWordError((msg) => {
+      setWakeWordError(`Wake word microphone error: ${msg}`)
+      setTimeout(() => setWakeWordError(null), 6000)
+    })
+    return unsub
+  }, [])
 
   // Fetch available languages on mount — no auth required
   useEffect(() => {
@@ -64,52 +76,63 @@ export default function SettingsPage() {
     }).catch(() => {/* leave empty on error */})
   }, [])
 
-  // Load local settings + active shortcut + server user/settings on mount
-  useEffect(() => {
+  // Load settings every time the window gains focus so data is always fresh
+  // when the user opens settings from the tray (the window is pre-created at
+  // startup and reused — its mount-time useEffect would only fire once).
+  const loadSettings = useCallback(() => {
+    // Phase 1 — local IPC (no network) → renders the page immediately
     Promise.all([
       window.api.getSettings(),
       window.api.getActiveShortcut(),
-      api.getMe().catch(() => null),
-      api.getServerSettings().catch(() => null),
-    ]).then(([localSettings, shortcut, serverUser, serverSettings]) => {
-      // Merge server settings into local (server is source of truth for synced fields)
-      const merged: AppSettings = {
-        ...localSettings,
-        // language lives on the User model, not UserSettings
-        ...(serverUser ? { language: serverUser.language } : {}),
-        ...(serverSettings
-          ? {
-              overlayOpacity: serverSettings.overlay_opacity,
-              overlaySize: serverSettings.overlay_size,
-              micSensitivity: serverSettings.mic_sensitivity,
-              soundEffects: serverSettings.sound_effects,
-              notifications: serverSettings.notifications,
-              wakeWordEnabled: serverSettings.wake_word_enabled,
-              launchAtLogin: serverSettings.launch_at_login,
-              showInTaskbar: serverSettings.show_in_taskbar,
-              voiceGender: serverSettings.voice_gender,
-            }
-          : {}),
-      }
-      setSettings(merged)
-      // getActiveShortcut() returns '' if the async startup restore hasn't
-      // finished yet. Fall back to the persisted shortcutKey from settings.
+    ]).then(([localSettings, shortcut]) => {
+      setSettings(localSettings)
       const resolvedShortcut = shortcut || localSettings.shortcutKey
       if (resolvedShortcut) setShortcutCombo(displayShortcut(resolvedShortcut))
-      if (serverUser) setUser(serverUser)
+
+      // Phase 2 — server data in the background, silently merged in
+      Promise.all([
+        api.getMe().catch(() => null),
+        api.getServerSettings().catch(() => null),
+      ]).then(([serverUser, serverSettings]) => {
+        if (serverUser) setUser(serverUser)
+        setSettings((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            ...(serverUser ? { language: serverUser.language } : {}),
+            ...(serverSettings
+              ? {
+                  overlayOpacity: serverSettings.overlay_opacity,
+                  overlaySize: serverSettings.overlay_size,
+                  micSensitivity: serverSettings.mic_sensitivity,
+                  soundEffects: serverSettings.sound_effects,
+                  notifications: serverSettings.notifications,
+                  wakeWordEnabled: serverSettings.wake_word_enabled,
+                  launchAtLogin: serverSettings.launch_at_login,
+                  showInTaskbar: serverSettings.show_in_taskbar,
+                  voiceGender: serverSettings.voice_gender,
+                }
+              : {}),
+          }
+        })
+      })
     }).catch((err) => {
-      // getSettings() or getActiveShortcut() invoke failed — use defaults so
-      // the page renders instead of staying blank forever.
-      console.error('[settings] failed to load settings:', err)
-      const defaults: AppSettings = {
+      console.error('[settings] failed to load local settings:', err)
+      setSettings({
         launchAtLogin: false, showInTaskbar: false, overlayOpacity: 1,
         overlaySize: 'default', micSensitivity: 5, soundEffects: true,
         notifications: true, language: 'en', wakeWordEnabled: false,
         voiceGender: 'female', shortcutKey: '',
-      }
-      setSettings(defaults)
+      })
     })
   }, [])
+
+  // Run on first mount AND every time the window is focused
+  useEffect(() => {
+    loadSettings()
+    window.addEventListener('focus', loadSettings)
+    return () => window.removeEventListener('focus', loadSettings)
+  }, [loadSettings])
 
   // Keyboard listener for shortcut recording
   useEffect(() => {
@@ -149,6 +172,24 @@ export default function SettingsPage() {
         api.patchMe({ language: value as string }).catch((err) => {
           if (!(err instanceof ApiError)) console.error('[settings] language sync failed:', err)
         })
+        return
+      }
+      // launchAtLogin requires an OS-level call — delegate to the Rust command.
+      // The command returns the actual OS state. If it fails, snap the toggle back.
+      if (key === 'launchAtLogin') {
+        setLaunchAtLogin(value as boolean)
+          .then((actual) => {
+            // Snap to what the OS confirmed (may differ from what was requested)
+            setSettings((prev) => prev ? { ...prev, launchAtLogin: actual } : prev)
+            setAutostartError(null)
+          })
+          .catch((err: unknown) => {
+            const msg = typeof err === 'string' ? err : 'Could not update startup setting'
+            setAutostartError(msg)
+            // Revert the toggle — OS rejected the change
+            setSettings((prev) => prev ? { ...prev, launchAtLogin: !value } : prev)
+            setTimeout(() => setAutostartError(null), 6000)
+          })
         return
       }
       const keyToServerField: Partial<Record<keyof AppSettings, string>> = {
@@ -404,7 +445,7 @@ export default function SettingsPage() {
                 Always-on wake word
               </p>
               <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 3 }}>
-                Say &ldquo;Hover&rdquo; instead of the shortcut
+                Say &ldquo;Hey Hover&rdquo; instead of the shortcut
               </p>
             </div>
             <Toggle
@@ -412,6 +453,11 @@ export default function SettingsPage() {
               onChange={(v) => update('wakeWordEnabled', v)}
             />
           </div>
+          {wakeWordError && (
+            <p style={{ marginTop: 8, fontSize: 13, color: '#f87171' }}>
+              ⚠ {wakeWordError}
+            </p>
+          )}
         </Card>
 
         {/* ── Voice gender ─────────────────────────────────────────────── */}
@@ -454,6 +500,30 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
+        </Card>
+
+        {/* ── System ──────────────────────────────────────────────────── */}
+        <SectionLabel icon="ri-settings-3-line">System</SectionLabel>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                Launch at startup
+              </p>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 3 }}>
+                Start HoverAI automatically when you log in
+              </p>
+            </div>
+            <Toggle
+              checked={settings.launchAtLogin}
+              onChange={(v) => update('launchAtLogin', v)}
+            />
+          </div>
+          {autostartError && (
+            <p style={{ marginTop: 8, fontSize: 13, color: '#f87171' }}>
+              ⚠ {autostartError}
+            </p>
+          )}
         </Card>
 
         {/* ── Account ─────────────────────────────────────────────────── */}

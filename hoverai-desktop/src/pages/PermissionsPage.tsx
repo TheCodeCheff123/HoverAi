@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import MicVisualiser from '@renderer/components/MicVisualiser'
 
@@ -35,43 +35,46 @@ export default function PermissionsPage({ onComplete }: PermissionsPageProps) {
     microphone: 'idle',
     screen: 'idle',
   })
+  const [wakeWordEnabled, setWakeWordEnabled] = useState(false)
+
+  useEffect(() => {
+    window.api.getSettings().then((s) => {
+      setWakeWordEnabled(s.wakeWordEnabled)
+    }).catch(() => {})
+  }, [])
 
   const allGranted = PERMISSIONS.every((p) => statuses[p.id] === 'granted')
 
+  // Enter key triggers Continue when all permissions are granted
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Enter' && allGranted) onComplete()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [allGranted, onComplete])
+
   async function handleToggle(id: string) {
     const current = statuses[id]
-
-    // If already granted, toggling off just resets to idle (no OS revoke possible)
     if (current === 'granted') {
       setStatuses((prev) => ({ ...prev, [id]: 'idle' }))
       return
     }
-
-    // Don't re-request while already in flight
     if (current === 'requesting') return
-
     setStatuses((prev) => ({ ...prev, [id]: 'requesting' }))
-
     try {
       if (id === 'microphone') {
-        // Step 1 — trigger the OS prompt via getUserMedia
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
           stream.getTracks().forEach((t) => t.stop())
         } catch {
-          // getUserMedia threw — permission was blocked at the OS / browser level
           setStatuses((prev) => ({ ...prev, [id]: 'denied' }))
           return
         }
-
-        // Step 2 — query Chromium's Permissions API for the definitive answer.
-        // This works on all platforms in Electron's renderer (Chromium-based).
         try {
           const perm = await navigator.permissions.query({ name: 'microphone' as PermissionName })
           const result = perm.state === 'granted' ? 'granted' : 'denied'
           setStatuses((prev) => ({ ...prev, [id]: result }))
-
-          // Step 3 — watch for the user changing their mind in system settings
           perm.onchange = () => {
             setStatuses((prev) => ({
               ...prev,
@@ -80,16 +83,20 @@ export default function PermissionsPage({ onComplete }: PermissionsPageProps) {
           }
           return
         } catch {
-          // Permissions API not available — fall through to IPC
+          // fall through to IPC
         }
       }
-
-      // Screen + macOS microphone fallback: ask main process
       const result = await window.api.requestPermission(id)
       setStatuses((prev) => ({ ...prev, [id]: result }))
     } catch {
       setStatuses((prev) => ({ ...prev, [id]: 'denied' }))
     }
+  }
+
+  async function handleWakeWordToggle() {
+    const next = !wakeWordEnabled
+    setWakeWordEnabled(next)
+    window.api.setWakeWordEnabled(next).catch(console.error)
   }
 
   return (
@@ -99,17 +106,17 @@ export default function PermissionsPage({ onComplete }: PermissionsPageProps) {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
         height: '100%',
         width: '100%',
-        padding: '52px 48px',
         background: 'var(--bg)',
+        overflow: 'hidden',
       }}
     >
-      {/* Header */}
+      {/* ── Header — fixed, never scrolls ── */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.05, ease: [0.22, 1, 0.36, 1] as const } }}
+        style={{ padding: '52px 48px 0', flexShrink: 0 }}
       >
         <h1 style={{ fontSize: 38, fontWeight: 700, letterSpacing: '-0.025em', color: 'var(--text-primary)', marginBottom: 12 }}>
           Grant device access
@@ -120,8 +127,26 @@ export default function PermissionsPage({ onComplete }: PermissionsPageProps) {
         </p>
       </motion.div>
 
-      {/* Permission cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, margin: '40px 0' }}>
+      {/* ── Scrollable cards area ── */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '32px 48px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+          // Hide scrollbar cross-browser
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+        } as React.CSSProperties}
+      >
+        <style>{`
+          .permissions-scroll::-webkit-scrollbar { display: none; }
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
+
         {PERMISSIONS.map(({ id, label, description, icon }, i) => {
           const status = statuses[id]
           const isOn = status === 'granted'
@@ -130,183 +155,199 @@ export default function PermissionsPage({ onComplete }: PermissionsPageProps) {
 
           return (
             <div key={id}>
-            <motion.div
-              key={`${id}-card`}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 + i * 0.08, ease: [0.22, 1, 0.36, 1] as const } }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-                padding: '20px 24px',
-                borderRadius: 'var(--radius-lg)',
-                background: [
-                  'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%) padding-box',
-                  'linear-gradient(135deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.06) 35%, rgba(255,255,255,0.01) 70%, rgba(255,255,255,0.005) 100%) border-box',
-                  'rgba(18,16,38,0.75) padding-box',
-                ].join(', '),
-                border: isDenied
-                  ? '1px solid rgba(239,68,68,0.4)'
-                  : '1px solid transparent',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.25)',
-                transition: 'border-color 0.2s',
-              }}
-            >
-              {/* Icon box */}
-              <div
+              <motion.div
+                key={`${id}-card`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.1 + i * 0.08, ease: [0.22, 1, 0.36, 1] as const } }}
                 style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  padding: '20px 24px',
+                  borderRadius: 'var(--radius-lg)',
                   background: [
-                    'linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 60%, rgba(255,255,255,0.01) 100%) border-box',
-                    'rgba(255,255,255,0.05) padding-box',
+                    'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%) padding-box',
+                    'linear-gradient(135deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.06) 35%, rgba(255,255,255,0.01) 70%, rgba(255,255,255,0.005) 100%) border-box',
+                    'rgba(18,16,38,0.75) padding-box',
                   ].join(', '),
-                  border: '1px solid transparent',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
+                  border: isDenied ? '1px solid rgba(239,68,68,0.4)' : '1px solid transparent',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.25)',
+                  transition: 'border-color 0.2s',
                 }}
               >
-                <i
-                  className={icon}
+                {/* Icon box */}
+                <div
                   style={{
-                    fontSize: 24,
-                    color: isOn ? 'var(--accent)' : isDenied ? '#ef4444' : 'var(--text-secondary)',
-                    transition: 'color 0.2s',
+                    width: 52, height: 52,
+                    borderRadius: 'var(--radius-md)',
+                    background: [
+                      'linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 60%, rgba(255,255,255,0.01) 100%) border-box',
+                      'rgba(255,255,255,0.05) padding-box',
+                    ].join(', '),
+                    border: '1px solid transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                   }}
-                />
-              </div>
+                >
+                  <i className={icon} style={{ fontSize: 24, color: isOn ? 'var(--accent)' : isDenied ? '#ef4444' : 'var(--text-secondary)', transition: 'color 0.2s' }} />
+                </div>
 
-              {/* Text */}
-              <div style={{ flex: 1 }}>
-                <p style={{ fontWeight: 700, fontSize: 17, color: 'var(--text-primary)', marginBottom: 2 }}>
-                  {label}
-                </p>
-                <AnimatePresence mode="wait">
-                  <motion.p
-                    key={status}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
-                    exit={{ opacity: 0, y: -4, transition: { duration: 0.1 } }}
-                    style={{
-                      fontSize: 14,
-                      color: isDenied ? '#ef4444' : 'var(--text-secondary)',
-                    }}
-                  >
-                    {isPending
-                      ? 'Requesting access…'
-                      : isDenied
-                        ? 'Access denied — check system settings'
-                        : description}
-                  </motion.p>
-                </AnimatePresence>
-              </div>
-
-              {/* Toggle */}
-              <button
-                onClick={() => handleToggle(id)}
-                disabled={isPending}
-                role="switch"
-                aria-checked={isOn}
-                style={{
-                  width: 50,
-                  height: 28,
-                  borderRadius: 'var(--radius-full)',
-                  border: 'none',
-                  cursor: isPending ? 'wait' : 'pointer',
-                  padding: 3,
-                  background: isOn ? 'var(--accent)' : isDenied ? 'rgba(239,68,68,0.3)' : '#3a3a3a',
-                  transition: 'background 0.25s',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: isOn ? 'flex-end' : 'flex-start',
-                  flexShrink: 0,
-                  opacity: isPending ? 0.6 : 1,
-                }}
-              >
-                {isPending ? (
-                  // Spinner knob
-                  <span
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: '50%',
-                      background: '#fff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      margin: '0 auto',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <i className="ri-loader-4-line" style={{ fontSize: 13, color: '#555', animation: 'spin 0.8s linear infinite' }} />
-                  </span>
-                ) : (
-                  <motion.span
-                    layout
-                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: '50%',
-                      background: '#fff',
-                      display: 'block',
-                      boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                      flexShrink: 0,
-                    }}
-                  />
-                )}
-              </button>
-            </motion.div>
-
-            {/* Mic visualiser — slides in below the microphone card when granted */}
-            {id === 'microphone' && (
-              <AnimatePresence>
-                {isOn && (
-                  <motion.div
-                    key="mic-vis"
-                    initial={{ opacity: 0, height: 0, marginTop: 0 }}
-                    animate={{ opacity: 1, height: 'auto', marginTop: 12, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] as const } }}
-                    exit={{ opacity: 0, height: 0, marginTop: 0, transition: { duration: 0.2 } }}
-                    style={{ overflow: 'hidden' }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '16px 24px',
-                        borderRadius: 'var(--radius-lg)',
-                        background: [
-                          'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%) padding-box',
-                          'linear-gradient(135deg, rgba(108,99,255,0.25) 0%, rgba(108,99,255,0.06) 50%, rgba(255,255,255,0.01) 100%) border-box',
-                          'rgba(18,16,38,0.6) padding-box',
-                        ].join(', '),
-                        border: '1px solid transparent',
-                      }}
+                {/* Text */}
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontWeight: 700, fontSize: 17, color: 'var(--text-primary)', marginBottom: 2 }}>{label}</p>
+                  <AnimatePresence mode="wait">
+                    <motion.p
+                      key={status}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0, transition: { duration: 0.2 } }}
+                      exit={{ opacity: 0, y: -4, transition: { duration: 0.1 } }}
+                      style={{ fontSize: 14, color: isDenied ? '#ef4444' : 'var(--text-secondary)' }}
                     >
-                      <p style={{ fontSize: 12, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 }}>
-                        Listening
-                      </p>
-                      <MicVisualiser />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            )}
+                      {isPending ? 'Requesting access…' : isDenied ? 'Access denied — check system settings' : description}
+                    </motion.p>
+                  </AnimatePresence>
+                </div>
+
+                {/* Toggle */}
+                <button
+                  onClick={() => handleToggle(id)}
+                  disabled={isPending}
+                  role="switch"
+                  aria-checked={isOn}
+                  style={{
+                    width: 50, height: 28,
+                    borderRadius: 'var(--radius-full)',
+                    border: 'none',
+                    cursor: isPending ? 'wait' : 'pointer',
+                    padding: 3,
+                    background: isOn ? 'var(--accent)' : isDenied ? 'rgba(239,68,68,0.3)' : '#3a3a3a',
+                    transition: 'background 0.25s',
+                    display: 'flex', alignItems: 'center',
+                    justifyContent: isOn ? 'flex-end' : 'flex-start',
+                    flexShrink: 0,
+                    opacity: isPending ? 0.6 : 1,
+                  }}
+                >
+                  {isPending ? (
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', flexShrink: 0 }}>
+                      <i className="ri-loader-4-line" style={{ fontSize: 13, color: '#555', animation: 'spin 0.8s linear infinite' }} />
+                    </span>
+                  ) : (
+                    <motion.span
+                      layout
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      style={{ width: 22, height: 22, borderRadius: '50%', background: '#fff', display: 'block', boxShadow: '0 1px 4px rgba(0,0,0,0.3)', flexShrink: 0 }}
+                    />
+                  )}
+                </button>
+              </motion.div>
+
+              {/* Mic visualiser */}
+              {id === 'microphone' && (
+                <AnimatePresence>
+                  {isOn && (
+                    <motion.div
+                      key="mic-vis"
+                      initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                      animate={{ opacity: 1, height: 'auto', marginTop: 12, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] as const } }}
+                      exit={{ opacity: 0, height: 0, marginTop: 0, transition: { duration: 0.2 } }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+                          padding: '16px 24px',
+                          borderRadius: 'var(--radius-lg)',
+                          background: [
+                            'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%) padding-box',
+                            'linear-gradient(135deg, rgba(108,99,255,0.25) 0%, rgba(108,99,255,0.06) 50%, rgba(255,255,255,0.01) 100%) border-box',
+                            'rgba(18,16,38,0.6) padding-box',
+                          ].join(', '),
+                          border: '1px solid transparent',
+                        }}
+                      >
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 }}>Listening</p>
+                        <MicVisualiser />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              )}
             </div>
           )
         })}
+
+        {/* ── Wake word card — optional ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.26, ease: [0.22, 1, 0.36, 1] as const } }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 16,
+            padding: '20px 24px',
+            borderRadius: 'var(--radius-lg)',
+            background: [
+              'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%) padding-box',
+              'linear-gradient(135deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.06) 35%, rgba(255,255,255,0.01) 70%, rgba(255,255,255,0.005) 100%) border-box',
+              'rgba(18,16,38,0.75) padding-box',
+            ].join(', '),
+            border: '1px solid transparent',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.25)',
+          }}
+        >
+          <div
+            style={{
+              width: 52, height: 52, borderRadius: 'var(--radius-md)',
+              background: [
+                'linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 60%, rgba(255,255,255,0.01) 100%) border-box',
+                'rgba(255,255,255,0.05) padding-box',
+              ].join(', '),
+              border: '1px solid transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}
+          >
+            <i className="ri-voice-recognition-line" style={{ fontSize: 24, color: wakeWordEnabled ? 'var(--accent)' : 'var(--text-secondary)', transition: 'color 0.2s' }} />
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+              <p style={{ fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>&ldquo;Hey Hover&rdquo; wake word</p>
+              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 4, padding: '2px 6px' }}>
+                Optional
+              </span>
+            </div>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+              {wakeWordEnabled ? 'Say "Hey Hover" to activate hands-free' : 'Activate without the shortcut key'}
+            </p>
+          </div>
+
+          <button
+            onClick={handleWakeWordToggle}
+            role="switch"
+            aria-checked={wakeWordEnabled}
+            style={{
+              width: 50, height: 28,
+              borderRadius: 'var(--radius-full)',
+              border: 'none', cursor: 'pointer', padding: 3,
+              background: wakeWordEnabled ? 'var(--accent)' : '#3a3a3a',
+              transition: 'background 0.25s',
+              display: 'flex', alignItems: 'center',
+              justifyContent: wakeWordEnabled ? 'flex-end' : 'flex-start',
+              flexShrink: 0,
+            }}
+          >
+            <motion.span
+              layout
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              style={{ width: 22, height: 22, borderRadius: '50%', background: '#fff', display: 'block', boxShadow: '0 1px 4px rgba(0,0,0,0.3)', flexShrink: 0 }}
+            />
+          </button>
+        </motion.div>
       </div>
 
-      {/* CTA */}
+      {/* ── CTA — pinned at bottom, never scrolls ── */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0, transition: { duration: 0.4, delay: 0.3, ease: [0.22, 1, 0.36, 1] as const } }}
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}
+        style={{ padding: '0 48px 40px', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}
       >
         <motion.button
           onClick={allGranted ? onComplete : undefined}
@@ -327,7 +368,7 @@ export default function PermissionsPage({ onComplete }: PermissionsPageProps) {
             transition: 'opacity 0.25s',
           }}
         >
-          Launch AI Overlay
+          Continue
         </motion.button>
         <AnimatePresence mode="wait">
           <motion.p
@@ -337,13 +378,10 @@ export default function PermissionsPage({ onComplete }: PermissionsPageProps) {
             exit={{ opacity: 0 }}
             style={{ fontSize: 14, color: 'var(--text-secondary)' }}
           >
-            {allGranted ? 'You\'re all set — let\'s go 🎉' : 'Enable both permissions to continue'}
+            {allGranted ? "Permissions granted — press Enter or click Continue \uD83C\uDF89" : 'Enable both permissions to continue'}
           </motion.p>
         </AnimatePresence>
       </motion.div>
-
-      {/* Spinner keyframe */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </motion.div>
   )
 }

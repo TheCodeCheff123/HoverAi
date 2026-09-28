@@ -64,6 +64,15 @@ export function saveSettings(settings: AppSettings): Promise<void> {
   return invoke<void>('save_settings', { s: settings })
 }
 
+export function setWakeWordEnabled(enabled: boolean): Promise<void> {
+  return invoke<void>('set_wake_word_enabled', { enabled })
+}
+
+/** Returns the actual OS state after the call. Throws a string error if the OS rejected it. */
+export function setLaunchAtLogin(enabled: boolean): Promise<boolean> {
+  return invoke<boolean>('set_launch_at_login', { enabled })
+}
+
 // ─── Token storage ───────────────────────────────────────────────────────────
 
 export function storeTokens(access: string, refresh: string): Promise<void> {
@@ -170,6 +179,14 @@ export function onQueryError(cb: (message: string) => void): () => void {
   return () => { unlisten?.() }
 }
 
+export function onWakeWordError(cb: (message: string) => void): () => void {
+  let unlisten: UnlistenFn | null = null
+  listen<string>('wake-word-error', (event) => cb(event.payload)).then((fn) => {
+    unlisten = fn
+  })
+  return () => { unlisten?.() }
+}
+
 // ─── Overlay controls ────────────────────────────────────────────────────────
 
 export function focusOverlay(): void {
@@ -216,6 +233,8 @@ const tauriApi = {
   getActiveShortcut,
   getSettings,
   saveSettings,
+  setWakeWordEnabled,
+  setLaunchAtLogin,
   storeTokens,
   getAccessToken,
   clearTokens,
@@ -227,6 +246,7 @@ const tauriApi = {
   onCaptureEnd,
   onQueryResult,
   onQueryError,
+  onWakeWordError,
   focusOverlay,
   dismissOverlay,
   closeSettingsWindow,

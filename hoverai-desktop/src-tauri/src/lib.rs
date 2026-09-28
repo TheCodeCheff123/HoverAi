@@ -195,7 +195,6 @@ async fn run_query_pipeline(app: AppHandle, audio_data: Vec<u8>, screenshot_data
 
     let mut request = client
         .post(format!("{api_base}/query"))
-        .header("ngrok-skip-browser-warning", "true")
         .multipart(form);
 
     if let Some(tok) = token {
@@ -309,7 +308,6 @@ async fn refresh_tokens(app: AppHandle) -> Option<String> {
     let resp = client
         .post(format!("{api_base}/auth/refresh"))
         .json(&Body { refresh_token: refresh })
-        .header("ngrok-skip-browser-warning", "true")
         .send()
         .await
         .ok()?;
@@ -336,14 +334,44 @@ fn get_settings(app: AppHandle) -> settings::AppSettings {
 #[tauri::command]
 fn save_settings(app: AppHandle, s: settings::AppSettings) {
     let wake_enabled = s.wake_word_enabled;
-    // launchAtLogin side effect
-    #[cfg(target_os = "macos")]
-    {
-        // tauri-plugin-autostart handles this — the renderer calls the plugin directly
-    }
     settings::save(&app, &s);
-    // Start or stop wake-word detector to match the new setting
     apply_wake_word_setting(&app, wake_enabled);
+}
+
+/// Toggle OS launch-at-login via tauri-plugin-autostart.
+/// Returns Ok(true/false) reflecting what was actually registered in the OS.
+/// Returns Err(message) if the OS call failed — the renderer can surface this.
+#[tauri::command]
+fn set_launch_at_login(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let mgr = app.autolaunch();
+
+    let os_result = if enabled {
+        mgr.enable().map_err(|e| e.to_string())
+    } else {
+        mgr.disable().map_err(|e| e.to_string())
+    };
+
+    match os_result {
+        Ok(_) => {
+            // Confirm what the OS actually has registered now
+            let actual = mgr.is_enabled().unwrap_or(false);
+            let mut s = settings::load(&app);
+            s.launch_at_login = actual;
+            settings::save(&app, &s);
+            println!("[autostart] set enabled={enabled} → OS confirmed={actual}");
+            Ok(actual)
+        }
+        Err(e) => {
+            eprintln!("[autostart] failed to set enabled={enabled}: {e}");
+            // Revert the setting to what the OS actually has so the UI stays consistent
+            let actual = mgr.is_enabled().unwrap_or(false);
+            let mut s = settings::load(&app);
+            s.launch_at_login = actual;
+            settings::save(&app, &s);
+            Err(e)
+        }
+    }
 }
 
 /// Start the detector if `enabled` is true and it isn't running; stop it if false.
@@ -563,7 +591,6 @@ async fn sign_out(app: AppHandle) {
         let _ = client
             .post(format!("{api_base}/auth/signout"))
             .json(&Body { refresh_token: refresh })
-            .header("ngrok-skip-browser-warning", "true")
             .send()
             .await;
     }
@@ -633,6 +660,7 @@ pub fn run() {
             save_settings,
             get_active_shortcut,
             set_wake_word_enabled,
+            set_launch_at_login,
             // Shortcuts
             test_shortcut,
             register_shortcut,
@@ -654,10 +682,28 @@ pub fn run() {
         .setup(|app| {
             setup_tray(app)?;
             restore_shortcut_on_startup(app);
-            // Start wake-word detector if it was enabled when the app last ran
+
             let saved = settings::load(&app.handle());
+
+            // Sync autostart entry with the persisted setting so the OS state
+            // always matches what the toggle says, even after a reinstall.
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let mgr = app.autolaunch();
+                if saved.launch_at_login {
+                    let _ = mgr.enable();
+                } else {
+                    let _ = mgr.disable();
+                }
+            }
+
+            // Start wake-word detector off the main thread — cpal + ONNX Runtime
+            // load native DLLs that must not block or crash the Tauri event loop.
             if saved.wake_word_enabled {
-                apply_wake_word_setting(&app.handle().clone(), true);
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    apply_wake_word_setting(&handle, true);
+                });
             }
             Ok(())
         })
@@ -771,7 +817,6 @@ async fn validate_token_on_startup(app: &AppHandle) -> bool {
 
     let request = client
         .get(format!("{api_base}/users/me"))
-        .header("ngrok-skip-browser-warning", "true")
         .header("Authorization", format!("Bearer {access}"));
 
     match http_client::fetch_with_auth(app, &client, request).await {
