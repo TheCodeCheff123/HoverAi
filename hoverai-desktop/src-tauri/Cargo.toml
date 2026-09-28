@@ -1,0 +1,52 @@
+[package]
+name = "hoverai-desktop"
+version = "0.1.0"
+description = "HoverAI — AI-powered on-screen assistant"
+authors = ["HoverAI"]
+edition = "2021"
+
+[lib]
+name = "hoverai_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-store = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-shell = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+base64 = "0.22"
+screenshots = "0.8"
+
+# Wake-word detection
+livekit-wakeword = "0.1"
+cpal = "0.15"
+
+# OS credential store (Windows Credential Manager / macOS Keychain / Linux Secret Service)
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+
+# ── Production release (used by CI / pnpm build:win|mac|linux) ───────────────
+# Full LTO + single codegen unit → smallest binary, slowest compile (~45 min)
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+# ── Fast local release (pnpm build:fast) ─────────────────────────────────────
+# Inherits release defaults, disables LTO → compiles in ~5-8 min.
+# Same optimisation level so behaviour matches production — just larger binary.
+[profile.release-fast]
+inherits = "release"
+codegen-units = 16
+lto = false

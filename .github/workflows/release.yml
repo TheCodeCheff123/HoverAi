@@ -1,0 +1,121 @@
+name: Release
+
+# Trigger on version tags (e.g. v0.1.0) or manually from the Actions tab
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false          # let all three platforms run even if one fails
+      matrix:
+        include:
+          # ── Windows ──────────────────────────────────────────────────────────
+          - platform: windows-latest
+            target:   x86_64-pc-windows-msvc
+            label:    windows
+
+          # ── macOS Apple Silicon ───────────────────────────────────────────────
+          - platform: macos-latest   # GitHub's macos-latest is now Apple Silicon (M1)
+            target:   aarch64-apple-darwin
+            label:    mac-arm
+
+          # ── macOS Intel ───────────────────────────────────────────────────────
+          - platform: macos-13       # macos-13 is the last Intel runner
+            target:   x86_64-apple-darwin
+            label:    mac-intel
+
+          # ── Linux ─────────────────────────────────────────────────────────────
+          - platform: ubuntu-22.04
+            target:   x86_64-unknown-linux-gnu
+            label:    linux
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Node + pnpm ───────────────────────────────────────────────────────
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      # ── 3. Rust toolchain + target ───────────────────────────────────────────
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Rust build cache — dramatically cuts rebuild time on subsequent runs
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: hoverai-desktop/src-tauri
+
+      # ── 4. Linux system dependencies (WebKit2GTK + audio/screen libs) ────────
+      - name: Install Linux deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libglib2.0-dev \
+            libasound2-dev \
+            libsecret-1-dev \
+            pkg-config
+
+      # ── 5. Write .env (API base URL comes from a repository secret) ───────────
+      # Set VITE_API_BASE in: repo Settings → Secrets and variables → Actions
+      - name: Write .env
+        working-directory: hoverai-desktop
+        shell: bash
+        run: echo "VITE_API_BASE=${{ secrets.VITE_API_BASE }}" > .env
+
+      # ── 6. Install JS deps ───────────────────────────────────────────────────
+      - name: Install JS deps
+        working-directory: hoverai-desktop
+        run: pnpm install --frozen-lockfile
+
+      # ── 7. TypeScript check ──────────────────────────────────────────────────
+      - name: Typecheck
+        working-directory: hoverai-desktop
+        run: pnpm typecheck
+
+      # ── 8. Tauri build ───────────────────────────────────────────────────────
+      - name: Build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS code signing (optional — remove if you don't have an Apple cert yet)
+          # APPLE_CERTIFICATE:            ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD:   ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY:       ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID:                     ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD:               ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID:                ${{ secrets.APPLE_TEAM_ID }}
+          # Windows code signing (optional)
+          # TAURI_SIGNING_PRIVATE_KEY:    ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: hoverai-desktop
+          tagName:     ${{ github.ref_name }}
+          releaseName: 'HoverAI ${{ github.ref_name }}'
+          releaseBody: 'See CHANGELOG for details.'
+          releaseDraft: true          # creates a draft — you publish manually after review
+          prerelease:   false
+          args:         --target ${{ matrix.target }}

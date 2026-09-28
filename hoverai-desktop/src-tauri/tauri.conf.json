@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "HoverAI",
+  "version": "0.1.0",
+  "identifier": "com.hoverai.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "HoverAI",
+        "width": 1200,
+        "height": 800,
+        "resizable": false,
+        "visible": true,
+        "decorations": true
+      },
+      {
+        "label": "overlay",
+        "title": "HoverAI Overlay",
+        "url": "overlay.html",
+        "width": 800,
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "resizable": true,
+        "focus": false
+      },
+      {
+        "label": "settings",
+        "title": "HoverAI Settings",
+        "url": "settings.html",
+        "width": 480,
+        "height": 680,
+        "decorations": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' http://localhost:* https://hover-ai-backend.onrender.com https://*.onrender.com"
+    },
+    "macOSPrivateApi": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/hey_hover.onnx": "resources/hey_hover.onnx"
+    },
+    "macOS": {
+      "infoPlist": "Info.plist"
+    }
+  }
+}
